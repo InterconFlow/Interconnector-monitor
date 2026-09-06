@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Interconnector Load Monitor — Europe</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1B2A;
+    --panel:#152838;
+    --panel-2:#1B3145;
+    --line:#2A4258;
+    --text:#E8EEF4;
+    --text-dim:#8FA3B8;
+    --text-faint:#5C7186;
+    --good:#33C17B;
+    --good-dim:#1E6B47;
+    --mod:#F0A73C;
+    --mod-dim:#8C6321;
+    --crit:#E75A4C;
+    --crit-dim:#8C2E24;
+    --steel:#4E7098;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;padding:0;}
+  body{
+    font-family:'IBM Plex Sans', sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    overflow:hidden;
+  }
+  .num{font-family:'IBM Plex Mono', monospace;}
+
+  #map{
+    position:absolute;
+    top:64px; left:0; right:0; bottom:0;
+    background:var(--bg);
+  }
+  .leaflet-container{ background: var(--bg); }
+
+  /* ---- Top bar ---- */
+  #topbar{
+    position:absolute; top:0; left:0; right:0; height:64px;
+    background:linear-gradient(180deg, var(--panel) 0%, #142433 100%);
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:center;
+    padding:0 20px;
+    gap:28px;
+    z-index:1000;
+  }
+  .brand{
+    display:flex; flex-direction:column; line-height:1.15; flex-shrink:0;
+  }
+  .brand .t1{ font-weight:600; font-size:15px; letter-spacing:0.2px; }
+  .brand .t2{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+  .brand .t2 b{ color:var(--mod); font-weight:600; }
+
+  .divider{ width:1px; height:32px; background:var(--line); flex-shrink:0; }
+
+  #timectl{
+    display:flex; align-items:center; gap:14px; flex:1; min-width:0;
+  }
+  #dateInput{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    color:var(--text); font-family:'IBM Plex Mono', monospace; font-size:12px;
+    padding:7px 8px; flex-shrink:0; color-scheme:dark;
+  }
+  #dataLoadWrap{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  #freshness{
+    font-size:11px; padding:6px 10px; border-radius:6px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text-dim);
+    white-space:nowrap;
+  }
+  #freshness.live{ color:var(--good); border-color:var(--good-dim); }
+  #freshness.stale{ color:var(--mod); border-color:var(--mod-dim); }
+  #freshness.none{ color:var(--text-faint); }
+
+  /* ---- View toggle ---- */
+  #viewToggle{ display:flex; gap:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:3px; flex-shrink:0; }
+  .viewBtn{
+    font-family:'IBM Plex Sans', sans-serif; font-size:12px; font-weight:500;
+    color:var(--text-dim); background:transparent; border:none; border-radius:5px;
+    padding:6px 14px; cursor:pointer; transition:background .15s, color .15s;
+  }
+  .viewBtn:hover{ color:var(--text); }
+  .viewBtn.active{ background:var(--steel); color:#fff; }
+
+  /* ---- Heatmap view ---- */
+  #heatmapView{
+    display:none;
+    position:absolute; top:64px; left:0; right:0; bottom:0;
+    background:var(--bg);
+    overflow-y:auto; overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    padding:20px 24px 40px;
+  }
+  #heatmapView.open{ display:block; }
+  #heatControls{
+    display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap;
+    margin-bottom:18px; padding-bottom:16px; border-bottom:1px solid var(--line);
+  }
+  .hc-group{ display:flex; flex-direction:column; gap:5px; }
+  .hc-group label{ font-size:10.5px; color:var(--text-dim); letter-spacing:0.3px; }
+  .hc-group input, .hc-group select{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    color:var(--text); font-family:'IBM Plex Sans', sans-serif; font-size:12px;
+    padding:7px 9px; color-scheme:dark;
+  }
+  .hc-spacer{ flex:1; }
+  .hcBtn{
+    font-family:'IBM Plex Sans', sans-serif; font-size:12px; font-weight:500;
+    color:var(--text); background:var(--panel-2); border:1px solid var(--line);
+    padding:9px 14px; border-radius:6px; cursor:pointer; height:33px;
+    transition:background .15s;
+  }
+  .hcBtn:hover{ background:#22405a; }
+  #heatDlStatus{ font-size:11px; color:var(--text-dim); align-self:center; }
+  #heatDlStatus.err{ color:var(--crit); }
+  #heatDlStatus.ok{ color:var(--good); }
+  #heatInsight{
+    display:flex; gap:24px; flex-wrap:wrap; margin-bottom:20px;
+  }
+  .insightCard{
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:14px 18px; min-width:220px;
+  }
+  .insightCard .il{ font-size:10.5px; color:var(--text-dim); letter-spacing:0.3px; margin-bottom:6px; }
+  .insightCard .iv{ font-family:'IBM Plex Mono', monospace; font-size:18px; font-weight:600; }
+  .insightCard .is{ font-size:11.5px; color:var(--text-dim); margin-top:4px; }
+  .insightCard .iv.crit{ color:var(--crit); }
+  #heatScrollWrap{
+    overflow-x:auto; overflow-y:visible;
+    -webkit-overflow-scrolling:touch;
+    max-width:100%;
+    border:1px solid var(--line); border-radius:8px;
+  }
+  #heatSvg{ display:block; }
+
+  #loadBtn{
+    font-size:12px; font-weight:500; color:var(--text);
+    background:var(--panel-2); border:1px solid var(--line);
+    padding:8px 12px; border-radius:6px; cursor:pointer;
+    white-space:nowrap; transition:background .15s;
+  }
+  #loadBtn:hover{ background:#22405a; }
+  #loadStatus{ font-size:11px; color:var(--text-dim); max-width:160px; }
+  #loadStatus.ok{ color:var(--good); }
+  #loadStatus.err{ color:var(--crit); }
+
+  #playBtn{
+    width:34px; height:34px; border-radius:50%;
+    background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; flex-shrink:0; font-size:13px;
+    transition:background .15s;
+  }
+  #playBtn:hover{ background:#22405a; }
+  #timectl input[type=range]{
+    flex:1; min-width:120px; accent-color:var(--mod);
+    height:4px;
+  }
+  #clockReadout{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:20px; font-weight:600; letter-spacing:0.5px;
+    min-width:64px; text-align:right; flex-shrink:0;
+  }
+  #dateReadout{
+    font-size:11px; color:var(--text-dim); min-width:150px; flex-shrink:0;
+  }
+
+  .agg{
+    display:flex; gap:18px; flex-shrink:0;
+    padding-left:18px; border-left:1px solid var(--line);
+  }
+  .agg .cell{ text-align:right; }
+  .agg .cell .v{ font-family:'IBM Plex Mono', monospace; font-size:16px; font-weight:600;}
+  .agg .cell .l{ font-size:10px; color:var(--text-dim); margin-top:1px;}
+  .agg .v.good{ color:var(--good); }
+  .agg .v.mod{ color:var(--mod); }
+  .agg .v.crit{ color:var(--crit); }
+
+  /* ---- Legend ---- */
+  #legend{
+    position:absolute; left:16px; bottom:20px; z-index:900;
+    background:rgba(21,40,56,0.92);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 14px;
+    font-size:12px;
+    backdrop-filter:blur(4px);
+    min-width:190px;
+  }
+  #legend .h{ font-size:11px; color:var(--text-dim); margin-bottom:8px; letter-spacing:0.3px;}
+  .lg-row{ display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .lg-row:last-child{margin-bottom:0;}
+  .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .dot.good{ background:var(--good); }
+  .dot.mod{ background:var(--mod); }
+  .dot.crit{ background:var(--crit); box-shadow:0 0 0 rgba(231,90,76,0.6);}
+  .lg-txt{ color:var(--text-dim); }
+  .lg-txt b{ color:var(--text); font-weight:500; }
+
+  /* ---- Detail panel ---- */
+  #panel{
+    position:absolute; top:80px; right:16px; bottom:20px; width:340px;
+    background:rgba(19,35,49,0.97);
+    border:1px solid var(--line);
+    border-radius:10px;
+    z-index:1000;
+    display:none;
+    flex-direction:column;
+    overflow:hidden;
+    box-shadow:0 12px 32px rgba(0,0,0,0.4);
+  }
+  #panel.open{ display:flex; }
+  #panel .ph{
+    padding:16px 18px 12px;
+    border-bottom:1px solid var(--line);
+    position:relative;
+  }
+  #panel .close{
+    position:absolute; top:14px; right:14px;
+    width:24px; height:24px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-dim); cursor:pointer; font-size:16px;
+    background:transparent;
+  }
+  #panel .close:hover{ background:var(--panel-2); color:var(--text); }
+  #panel .route{ font-size:16px; font-weight:600; padding-right:28px; line-height:1.3; }
+  #panel .countries{ font-size:12px; color:var(--text-dim); margin-top:4px; }
+  #panel .body{ padding:16px 18px; overflow-y:auto; }
+
+  #sourcesPanel{
+    display:none;
+    position:absolute; left:16px; bottom:20px; z-index:1200;
+    background:rgba(19,35,49,0.98); border:1px solid var(--line);
+    border-radius:10px; padding:16px 18px; width:300px;
+    box-shadow:0 12px 32px rgba(0,0,0,0.45);
+  }
+  #sourcesPanel.open{ display:block; }
+  #sourcesPanel .h{ font-size:11px; color:var(--text-dim); letter-spacing:0.3px; margin-bottom:12px; }
+  .src-block{ margin-bottom:14px; }
+  .src-block:last-of-type{ margin-bottom:0; }
+  .src-t{ font-size:12px; font-weight:600; margin-bottom:4px; }
+  .src-d{ font-size:11.5px; line-height:1.55; color:var(--text-dim); }
+  .src-d b{ color:var(--mod); font-weight:600; }
+  .src-close{
+    margin-top:14px; padding-top:12px; border-top:1px solid var(--line);
+    font-size:11px; color:var(--text-faint); cursor:pointer; text-align:right;
+  }
+  .src-close:hover{ color:var(--text); }
+
+  .statusPill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600;
+    letter-spacing:0.3px; margin-top:10px;
+  }
+  .statusPill.good{ background:rgba(51,193,123,0.15); color:var(--good); }
+  .statusPill.mod{ background:rgba(240,167,60,0.15); color:var(--mod); }
+  .statusPill.crit{ background:rgba(231,90,76,0.15); color:var(--crit); }
+  .statusPill .pdot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .srcPill{
+    display:inline-block; margin-left:6px; padding:4px 10px; border-radius:20px;
+    font-size:10.5px; font-weight:600; letter-spacing:0.2px; vertical-align:middle;
+  }
+  .srcPill.live{ background:rgba(255,255,255,0.12); color:#fff; }
+  .srcPill.sim{ background:transparent; color:var(--text-faint); border:1px solid var(--line); }
+
+  .metricRow{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:10px 0; border-bottom:1px solid var(--line);
+  }
+  .metricRow:last-of-type{ border-bottom:none; }
+  .metricRow .k{ font-size:12px; color:var(--text-dim); }
+  .metricRow .v{ font-family:'IBM Plex Mono', monospace; font-size:14px; font-weight:600; }
+
+  .sparkWrap{ margin-top:16px; }
+  .sparkWrap .lbl{ font-size:11px; color:var(--text-dim); margin-bottom:8px; }
+  #spark{ display:flex; align-items:flex-end; gap:1px; height:64px; }
+  .sbar{ flex:1; background:var(--steel); border-radius:1px 1px 0 0; min-height:2px; position:relative; }
+  .sbar.now{ outline:1px solid #fff; outline-offset:0; }
+
+  .panelNote{
+    margin-top:16px; padding-top:14px; border-top:1px solid var(--line);
+    font-size:11px; line-height:1.5; color:var(--text-faint);
+  }
+
+  /* ---- markers ---- */
+  .ic-marker{ position:relative; }
+  .ic-dot{
+    width:14px; height:14px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.85);
+    box-shadow:0 1px 4px rgba(0,0,0,0.5);
+  }
+  .ic-marker.crit .ic-dot{ animation: pulseDot 1.6s ease-out infinite; }
+  .ic-marker .ring{
+    position:absolute; top:50%; left:50%; width:14px; height:14px;
+    border-radius:50%; transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  .ic-marker.crit .ring{ animation: pulseRing 1.6s ease-out infinite; background:var(--crit); }
+  .ic-marker.live-data::before{
+    content:''; position:absolute; top:-2px; right:-2px;
+    width:6px; height:6px; border-radius:50%;
+    background:#fff; border:1px solid rgba(0,0,0,0.4); z-index:2;
+  }
+
+  @keyframes pulseRing{
+    0%{ transform:translate(-50%,-50%) scale(1); opacity:0.55; }
+    100%{ transform:translate(-50%,-50%) scale(3.2); opacity:0; }
+  }
+  @keyframes pulseDot{
+    0%,100%{ box-shadow:0 1px 4px rgba(0,0,0,0.5), 0 0 0 0 rgba(231,90,76,0.5); }
+    50%{ box-shadow:0 1px 4px rgba(0,0,0,0.5), 0 0 0 6px rgba(231,90,76,0); }
+  }
+
+  .leaflet-popup-content-wrapper{
+    background:var(--panel); color:var(--text); border-radius:8px;
+    font-family:'IBM Plex Sans', sans-serif;
+  }
+  .leaflet-popup-tip{ background:var(--panel); }
+  .leaflet-popup-content{ margin:10px 12px; font-size:12px; }
+  .leaflet-popup-content b{ font-size:13px; }
+
+  #banner{
+    position:absolute; top:76px; left:50%; transform:translateX(-50%);
+    z-index:1500; background:rgba(21,40,56,0.96); border:1px solid var(--line);
+    padding:8px 16px; border-radius:8px; font-size:12px; color:var(--text-dim);
+    display:flex; align-items:center; gap:10px; max-width:520px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.35);
+  }
+  #banner .x{ cursor:pointer; color:var(--text-faint); flex-shrink:0; }
+  #banner .x:hover{ color:var(--text); }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  @media (max-width: 760px){
+    #panel{ width:calc(100% - 32px); }
+    .agg{ display:none; }
+    #dateReadout{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">
+    <div class="t1">Interconnector Load Monitor</div>
+    <div class="t2">Cross-border transmission &middot; 15-min resolution <b>(approximate / simulated data)</b></div>
+  </div>
+  <div class="divider"></div>
+  <div id="dataLoadWrap">
+    <div id="freshness">Checking for live data…</div>
+    <label id="loadBtn" for="fileInput">Load file instead</label>
+    <input type="file" id="fileInput" accept="application/json" style="display:none;">
+    <div id="loadStatus"></div>
+  </div>
+  <div class="divider"></div>
+  <div id="timectl">
+    <input type="date" id="dateInput" class="num">
+    <div id="playBtn">&#9654;</div>
+    <input type="range" id="hourSlider" min="0" max="95" step="1" value="32">
+    <div id="clockReadout" class="num">08:00</div>
+  </div>
+  <div id="dateReadout">—</div>
+  <div class="agg">
+    <div class="cell"><div class="v good num" id="aggGood">–</div><div class="l">normal</div></div>
+    <div class="cell"><div class="v mod num" id="aggMod">–</div><div class="l">moderate</div></div>
+    <div class="cell"><div class="v crit num" id="aggCrit">–</div><div class="l">critical</div></div>
+  </div>
+  <div class="divider"></div>
+  <div id="viewToggle">
+    <button class="viewBtn active" id="viewBtnMap">Map</button>
+    <button class="viewBtn" id="viewBtnHeat">Heatmap</button>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="heatmapView">
+  <div id="heatControls">
+    <div class="hc-group">
+      <label>From</label>
+      <input type="date" id="heatFrom" class="num">
+    </div>
+    <div class="hc-group">
+      <label>To</label>
+      <input type="date" id="heatTo" class="num">
+    </div>
+    <div class="hc-group">
+      <label>Aggregate by</label>
+      <select id="heatAggBy">
+        <option value="hour">Hour of day</option>
+        <option value="day">Day in range</option>
+      </select>
+    </div>
+    <div class="hc-group">
+      <label>Metric</label>
+      <select id="heatMetric">
+        <option value="avg">Average loading %</option>
+        <option value="peak">Peak loading %</option>
+        <option value="crit">Hours &gt; 85% (congestion count)</option>
+      </select>
+    </div>
+    <div class="hc-group">
+      <label>Sort rows by</label>
+      <select id="heatSort">
+        <option value="worst">Worst first</option>
+        <option value="alpha">Alphabetical</option>
+      </select>
+    </div>
+    <div class="hc-spacer"></div>
+    <button id="heatDownloadPng" class="hcBtn">Download PNG</button>
+    <button id="heatDownloadCsv" class="hcBtn">Download CSV</button>
+    <span id="heatDlStatus"></span>
+  </div>
+  <div id="heatInsight"></div>
+  <div id="heatScrollWrap">
+    <svg id="heatSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<div id="banner">
+  <span>Topology &amp; capacities reflect real interconnectors (approximated where exact ENTSO&#8209;E figures weren't available). Hourly loading is simulated for demonstration — not live telemetry.</span>
+  <span class="x" onclick="document.getElementById('banner').style.display='none'">&#10005;</span>
+</div>
+
+<div id="legend">
+  <div class="h">LOADING vs. TECHNICAL LIMIT</div>
+  <div class="lg-row"><span class="dot good"></span><span class="lg-txt">Normal — <b>&lt; 60%</b></span></div>
+  <div class="lg-row"><span class="dot mod"></span><span class="lg-txt">Moderate — <b>60–85%</b></span></div>
+  <div class="lg-row"><span class="dot crit"></span><span class="lg-txt">Critical — <b>&gt; 85%</b> (pulsing)</span></div>
+  <div id="srcToggle" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--line); font-size:11px; color:var(--text-dim); cursor:pointer; text-decoration:underline; text-decoration-color:var(--line);">Data &amp; sources</div>
+</div>
+
+<div id="sourcesPanel">
+  <div class="h">DATA &amp; SOURCES</div>
+  <div class="src-block">
+    <div class="src-t">Interconnector list &amp; locations</div>
+    <div class="src-d">Compiled from ENTSO-E's public grid map and Transparency Platform border list (transparency.entsoe.eu), cross-checked against individual project pages for named HVDC links (e.g. NordLink, ALEGrO, Celtic Interconnector, Viking Link). Coordinates mark the approximate converter station / border-crossing area, not exact tower positions.</div>
+  </div>
+  <div class="src-block">
+    <div class="src-t">Technical limits (NTC/thermal)</div>
+    <div class="src-d">Approximated from publicly published NTC values (ENTSO-E TYNDP capacity reports, ENTSO-E NTC bulletins, and individual TSO/project announcements). Several TSOs only publish regional or seasonal figures — those are rounded to a single representative value here.</div>
+  </div>
+  <div class="src-block">
+    <div class="src-t">Hourly &amp; date-based loading</div>
+    <div class="src-d"><b>Simulated</b>, not live telemetry — a seeded model with diurnal shape, weekday/weekend effect and seasonal baseline, for demonstration only. Swap in real ENTSO-E Physical Flow data via an API token to replace this.</div>
+  </div>
+  <div class="src-close" id="srcClose">Close</div>
+</div>
+
+<div id="panel">
+  <div class="ph">
+    <div class="close" id="panelClose">&#10005;</div>
+    <div class="route" id="pRoute">—</div>
+    <div class="countries" id="pCountries">—</div>
+  </div>
+  <div class="body">
+    <div id="pStatus"></div>
+    <div class="metricRow"><div class="k">Current flow</div><div class="v" id="pFlow">—</div></div>
+    <div class="metricRow"><div class="k">Technical limit (NTC)</div><div class="v" id="pLimit">—</div></div>
+    <div class="metricRow"><div class="k">Loading</div><div class="v" id="pPct">—</div></div>
+    <div class="metricRow"><div class="k">Link type</div><div class="v" id="pType">—</div></div>
+    <div class="sparkWrap">
+      <div class="lbl">24h loading profile (% of limit)</div>
+      <div id="spark"></div>
+    </div>
+    <div class="panelNote" id="pNote"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   DATA — real cross-border HV interconnection points in Europe
+   Coordinates are approximate (converter station / border-crossing
+   area, not exact tower locations). NTC values are approximate
+   public figures (rounded); several are indicative where TSOs
+   only publish regional/aggregate limits.
+   ============================================================ */
+const LINKS = [
+  ["FR–ES","France","Spain",42.62,2.65,2800,"HVDC (INELFE)"],
+  ["FR–DE","France","Germany",49.15,6.55,3500,"AC"],
+  ["FR–BE","France","Belgium",50.55,3.25,3300,"AC"],
+  ["FR–IT","France","Italy",45.02,6.85,2650,"AC/HVDC"],
+  ["FR–CH","France","Switzerland",46.20,6.05,3000,"AC"],
+  ["FR–GB (IFA)","France","Great Britain",50.92,1.60,2000,"HVDC"],
+  ["FR–GB (IFA2)","France","Great Britain",50.55,0.55,1000,"HVDC"],
+  ["FR–GB (ElecLink)","France","Great Britain",51.00,1.40,1000,"HVDC"],
+  ["FR–IE (Celtic)","France","Ireland",48.55,-4.05,700,"HVDC"],
+  ["DE–PL","Germany","Poland",53.02,14.30,2000,"AC"],
+  ["DE–DK1","Germany","Denmark",54.80,9.40,2500,"AC"],
+  ["DE–NL","Germany","Netherlands",53.05,7.10,5000,"AC"],
+  ["DE–AT","Germany","Austria",48.30,13.05,5500,"AC"],
+  ["DE–CH","Germany","Switzerland",47.57,8.06,4000,"AC"],
+  ["DE–CZ","Germany","Czechia",50.80,14.30,2500,"AC"],
+  ["DE–BE (ALEGrO)","Germany","Belgium",50.63,6.10,1000,"HVDC"],
+  ["NL–GB (BritNed)","Netherlands","Great Britain",51.90,4.00,1000,"HVDC"],
+  ["NL–BE","Netherlands","Belgium",51.30,4.30,3500,"AC"],
+  ["NL–NO (NorNed)","Netherlands","Norway",52.90,4.60,700,"HVDC"],
+  ["NL–DK (COBRAcable)","Netherlands","Denmark",53.40,5.20,700,"HVDC"],
+  ["BE–GB (Nemo)","Belgium","Great Britain",51.20,3.20,1000,"HVDC"],
+  ["NO–DK (Skagerrak)","Norway","Denmark",58.50,8.00,1700,"HVDC"],
+  ["NO–DE (NordLink)","Norway","Germany",58.00,7.00,1400,"HVDC"],
+  ["NO–GB (North Sea Link)","Norway","Great Britain",59.05,5.50,1400,"HVDC"],
+  ["NO–SE","Norway","Sweden",59.10,11.40,3500,"AC"],
+  ["SE–DK2 (Öresund)","Sweden","Denmark",55.60,12.80,1700,"AC"],
+  ["SE–DK1 (Konti-Skan)","Sweden","Denmark",57.50,11.80,740,"HVDC"],
+  ["SE–FI (Fenno-Skan)","Sweden","Finland",60.40,20.00,2500,"AC/HVDC"],
+  ["SE–PL (SwePol)","Sweden","Poland",55.40,14.30,600,"HVDC"],
+  ["SE–DE (Baltic Cable)","Sweden","Germany",55.40,13.00,600,"HVDC"],
+  ["SE–LT (NordBalt)","Sweden","Lithuania",56.00,16.00,700,"HVDC"],
+  ["FI–EE (Estlink)","Finland","Estonia",60.00,24.90,1016,"HVDC"],
+  ["PL–LT (LitPol)","Poland","Lithuania",54.30,23.00,500,"AC"],
+  ["PL–CZ","Poland","Czechia",50.30,16.60,1500,"AC"],
+  ["PL–SK","Poland","Slovakia",49.30,21.80,1000,"AC"],
+  ["LT–LV","Lithuania","Latvia",56.30,24.90,1500,"AC"],
+  ["LV–EE","Latvia","Estonia",58.00,25.50,1300,"AC"],
+  ["CZ–AT","Czechia","Austria",48.80,15.90,1300,"AC"],
+  ["CZ–SK","Czechia","Slovakia",48.90,17.90,2000,"AC"],
+  ["AT–CH","Austria","Switzerland",47.40,9.60,1200,"AC"],
+  ["AT–IT","Austria","Italy",46.60,12.30,1000,"AC"],
+  ["AT–HU","Austria","Hungary",47.80,17.00,1200,"AC"],
+  ["AT–SI","Austria","Slovenia",46.60,14.30,1000,"AC"],
+  ["CH–IT","Switzerland","Italy",46.10,8.90,4000,"AC"],
+  ["IT–SI","Italy","Slovenia",45.90,13.50,1000,"AC"],
+  ["IT–GR","Italy","Greece",40.00,18.50,500,"HVDC"],
+  ["IT–MT","Italy","Malta",36.00,14.40,200,"HVDC"],
+  ["IT–ME","Italy","Montenegro",41.30,16.50,1000,"HVDC"],
+  ["SI–HR","Slovenia","Croatia",45.70,15.70,1500,"AC"],
+  ["SI–HU","Slovenia","Hungary",46.60,16.40,1200,"AC"],
+  ["HR–HU","Croatia","Hungary",46.00,17.00,1800,"AC"],
+  ["HR–RS","Croatia","Serbia",45.40,19.00,1200,"AC"],
+  ["HR–BA","Croatia","Bosnia & Herzegovina",44.80,17.00,1000,"AC"],
+  ["HU–SK","Hungary","Slovakia",48.10,18.50,1800,"AC"],
+  ["HU–RO","Hungary","Romania",46.80,21.50,1200,"AC"],
+  ["HU–RS","Hungary","Serbia",46.20,19.80,1000,"AC"],
+  ["HU–UA","Hungary","Ukraine",48.10,23.00,650,"AC"],
+  ["RO–RS","Romania","Serbia",44.80,21.50,1000,"AC"],
+  ["RO–BG","Romania","Bulgaria",43.80,25.50,1400,"AC"],
+  ["RO–UA","Romania","Ukraine",48.00,25.00,600,"AC"],
+  ["BG–GR","Bulgaria","Greece",41.50,24.50,1400,"AC"],
+  ["BG–RS","Bulgaria","Serbia",43.20,22.60,1200,"AC"],
+  ["BG–MK","Bulgaria","North Macedonia",42.00,23.00,700,"AC"],
+  ["GR–MK","Greece","North Macedonia",41.10,22.10,1000,"AC"],
+  ["GR–AL","Greece","Albania",40.50,20.60,500,"AC"],
+  ["RS–BA","Serbia","Bosnia & Herzegovina",44.50,19.00,1000,"AC"],
+  ["RS–ME","Serbia","Montenegro",43.30,19.50,1000,"AC"],
+  ["RS–MK","Serbia","North Macedonia",42.30,21.90,700,"AC"],
+  ["ES–PT","Spain","Portugal",41.50,-7.00,3500,"AC"],
+  ["GB–IE (Moyle)","Great Britain","Northern Ireland",55.00,-6.00,500,"HVDC"],
+  ["GB–IE (EWIC)","Great Britain","Ireland",53.50,-5.00,500,"HVDC"],
+  ["DK–GB (Viking Link)","Denmark","Great Britain",55.60,6.50,1400,"HVDC"]
+];
+
+/* ============================================================
+   Simulated hourly loading generator — deterministic per link
+   ============================================================ */
+function seedFromString(s){
+  let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) >>> 0; }
+  return h;
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+// Loading profile is a deterministic function of (link, date) so the same
+// date always reproduces the same simulated pattern, but different dates
+// differ: weekends run lower, winter months run higher with sharper peaks.
+function seasonalFactor(month){ // month: 0-11
+  // higher demand/loading Nov-Feb, lower Jun-Aug
+  const table = [1.15,1.12,1.02,0.95,0.90,0.85,0.82,0.85,0.92,1.0,1.08,1.15];
+  return table[month];
+}
+function buildProfiles(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay(); // 0 Sun .. 6 Sat
+  const month = d.getMonth();
+  const isWeekend = (dow===0 || dow===6);
+  const seasonal = seasonalFactor(month);
+  const weekendFactor = isWeekend ? 0.82 : 1.0;
+
+  return LINKS.map((l, idx) => {
+    const rnd = mulberry32(seedFromString(l[0]) ^ idx * 7919);
+    let base = (28 + rnd()*32) * seasonal * weekendFactor;
+    let amp  = (14 + rnd()*30) * (isWeekend ? 0.8 : 1.0);
+    const phase = rnd()*Math.PI*2;
+    const noiseAmp = 3 + rnd()*4; // smaller per-quarter noise; real 15-min data is locally smooth
+    const daySeed = seedFromString(l[0] + '_' + dateStr);
+    const dayRnd = mulberry32(daySeed);
+    const spikeChance = dayRnd();
+    const spikeQ = Math.floor(dayRnd()*96);
+    const spikeSize = (22 + dayRnd()*30) * seasonal;
+    const quarters = [];
+    let noiseCarry = 0;
+    for(let q=0; q<96; q++){
+      const h = q/4; // fractional hour
+      let v = base + amp*Math.sin((h/24)*Math.PI*2 - Math.PI/2 + phase*0.3);
+      const peakScale = isWeekend ? 0.6 : 1.0;
+      v += peakScale*(10*Math.exp(-Math.pow(h-8,2)/6) + 14*Math.exp(-Math.pow(h-19,2)/6)) * seasonal;
+      const nrnd = mulberry32(seedFromString(l[0]+"_"+dateStr+"_"+q));
+      // smooth the noise a little across neighbouring quarters (EMA) so it
+      // doesn't look like a fresh random number every 15 minutes
+      noiseCarry = noiseCarry*0.5 + ((nrnd()-0.5)*2*noiseAmp)*0.5;
+      v += noiseCarry;
+      if(spikeChance>0.55 && Math.abs(q-spikeQ)<=3){
+        v += spikeSize * (1-Math.abs(q-spikeQ)/3);
+      }
+      v = Math.max(4, Math.min(104, v));
+      quarters.push(v);
+    }
+    return quarters;
+  });
+}
+
+let profiles = null; // simulated profiles for currentDate (kept for the main view)
+const profilesCache = {}; // dateStr -> profiles, so the heatmap can pull any date in its range
+function getProfilesForDate(dateStr){
+  if(!profilesCache[dateStr]) profilesCache[dateStr] = buildProfiles(dateStr);
+  return profilesCache[dateStr];
+}
+
+function statusFor(pct){
+  if(pct>85) return 'crit';
+  if(pct>=60) return 'mod';
+  return 'good';
+}
+const statusColor = {good:'#33C17B', mod:'#F0A73C', crit:'#E75A4C'};
+const statusLabel = {good:'Normal', mod:'Moderate', crit:'Critical'};
+
+/* ============================================================
+   Real ENTSO-E data (optional) — loaded via the "Load real data"
+   button from a JSON file produced by fetch_entsoe_data.py.
+   Indexed as realIndex[link_id][ "YYYY-MM-DD" ][ hour ] = flowMw
+   ============================================================ */
+let realDataRaw = null;
+let realIndex = {};
+let realNtc = {};
+let realNtcIndex = {};
+
+function indexRealData(payload){
+  realIndex = {}; realNtc = {}; realNtcIndex = {};
+  const links = payload.links || {};
+  Object.keys(links).forEach(linkId => {
+    const entry = links[linkId];
+    if(entry.ntc_mw) realNtc[linkId] = entry.ntc_mw; // single-average fallback
+    const byDate = {};
+    (entry.series || []).forEach(pt => {
+      const d = new Date(pt.t);
+      const dateStr = d.toISOString().slice(0,10);
+      // quarter-hour-of-day index, 0-95 (e.g. 15-min ENTSO-E resolution;
+      // hourly-only sources just populate one quarter per hour, and
+      // loadingInfo below still finds the nearest populated quarter)
+      const q = d.getUTCHours()*4 + Math.floor(d.getUTCMinutes()/15);
+      if(!byDate[dateStr]) byDate[dateStr] = {};
+      byDate[dateStr][q] = pt.flow_mw;
+    });
+    realIndex[linkId] = byDate;
+
+    // Time-varying technical limit, same indexing scheme as flow above.
+    // Preferred over the flat realNtc[] average whenever present, since
+    // real NTC genuinely changes hour to hour (seasonal ratings,
+    // maintenance derates, etc.) rather than being one fixed number.
+    const ntcByDate = {};
+    (entry.ntc_series || []).forEach(pt => {
+      const d = new Date(pt.t);
+      const dateStr = d.toISOString().slice(0,10);
+      const q = d.getUTCHours()*4 + Math.floor(d.getUTCMinutes()/15);
+      if(!ntcByDate[dateStr]) ntcByDate[dateStr] = {};
+      ntcByDate[dateStr][q] = pt.ntc_mw;
+    });
+    realNtcIndex[linkId] = ntcByDate;
+  });
+}
+
+// Returns {pct, flowMw, limitMw, isLive, limitIsLive} for link i at
+// (dateStr, q), where q is a quarter-hour-of-day index (0-95). Prefers
+// real ENTSO-E data for both flow and limit; if the exact quarter isn't
+// populated (e.g. an hourly-only source), falls back to the most recent
+// populated quarter that day, then to a flat real average, then finally
+// to the mockup's approximated static capacity.
+function loadingInfo(i, dateStr, q){
+  const l = LINKS[i];
+  const linkId = l[0];
+  const dayData = realIndex[linkId] && realIndex[linkId][dateStr];
+  const ntcDayData = realNtcIndex[linkId] && realNtcIndex[linkId][dateStr];
+
+  let limitMw = null, limitIsLive = false;
+  if(ntcDayData){
+    let qq = q;
+    while(qq >= 0 && ntcDayData[qq] === undefined) qq--;
+    if(qq >= 0){ limitMw = ntcDayData[qq]; limitIsLive = true; }
+  }
+  if(limitMw === null && realNtc[linkId]){ limitMw = realNtc[linkId]; limitIsLive = true; }
+  if(limitMw === null){ limitMw = l[5]; limitIsLive = false; }
+
+  if(dayData){
+    let qq = q;
+    while(qq >= 0 && dayData[qq] === undefined) qq--;
+    if(qq >= 0){
+      const flowMw = Math.abs(dayData[qq]);
+      const pct = Math.max(0, Math.min(104, (flowMw/limitMw)*100));
+      return {pct, flowMw: Math.round(flowMw), limitMw: Math.round(limitMw), isLive:true, limitIsLive};
+    }
+  }
+  const pct = getProfilesForDate(dateStr)[i][q];
+  const flowMw = Math.round(limitMw * (pct/100));
+  return {pct, flowMw, limitMw: Math.round(limitMw), isLive:false, limitIsLive};
+}
+
+/* ============================================================
+   Map setup
+   ============================================================ */
+const map = L.map('map', {
+  zoomControl:false,
+  attributionControl:true,
+  minZoom:3,
+  maxBounds:[[30,-30],[72,45]],
+  maxBoundsViscosity:0.6
+}).setView([50.5, 12], 4);
+
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  subdomains:'abcd',
+  maxZoom:10
+}).addTo(map);
+
+// Crisp country border overlay (drawn ourselves so borders stay visible
+// against the dark basemap at every zoom level)
+fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
+  .then(r => r.json())
+  .then(geo => {
+    L.geoJSON(geo, {
+      style: { color:'#3E5C78', weight:1, fillColor:'#1A2E40', fillOpacity:0.35, opacity:0.9 }
+    }).addTo(map);
+    // keep interconnector markers above the border layer
+    markers.forEach(m => m.bringToFront());
+  })
+  .catch(() => { /* border layer optional; map still works without it */ });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter_only_labels/{z}/{x}/{y}{r}.png', {
+  subdomains:'abcd',
+  maxZoom:10,
+  opacity:0.9
+}).addTo(map);
+
+const markers = LINKS.map((l, i) => {
+  const icon = L.divIcon({
+    className:'',
+    html:`<div class="ic-marker" id="mk${i}"><div class="ring"></div><div class="ic-dot"></div></div>`,
+    iconSize:[14,14],
+    iconAnchor:[7,7]
+  });
+  const m = L.marker([l[3], l[4]], {icon}).addTo(map);
+  m.on('click', () => openPanel(i));
+  m.bindTooltip(l[0], {direction:'top', offset:[0,-8], opacity:0.9});
+  return m;
+});
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+const slider = document.getElementById('hourSlider');
+const clockReadout = document.getElementById('clockReadout');
+const dateInput = document.getElementById('dateInput');
+const dateReadout = document.getElementById('dateReadout');
+const playBtn = document.getElementById('playBtn');
+let currentQ = 32; // quarter-hour index, 0-95 (08:00 default)
+let currentDate = '';
+let playing = false;
+let playTimer = null;
+let openIdx = null;
+
+function pctLabel(q){ const hh=Math.floor(q/4), mm=(q%4)*15; return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm; }
+function toISO(d){ return d.toISOString().slice(0,10); }
+
+(function initDate(){
+  const today = new Date();
+  const min = new Date(today); min.setDate(min.getDate()-90);
+  dateInput.max = toISO(today);
+  dateInput.min = toISO(min);
+  dateInput.value = toISO(today);
+  currentDate = dateInput.value;
+  profiles = getProfilesForDate(currentDate);
+})();
+
+function formatDateReadout(dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  const wd = d.toLocaleDateString('en-GB', {weekday:'short'});
+  const dm = d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+  const tag = (d.getDay()===0||d.getDay()===6) ? 'weekend' : 'weekday';
+  return `${wd} ${dm} · simulated ${tag}`;
+}
+
+dateInput.addEventListener('change', () => {
+  if(!dateInput.value) return;
+  currentDate = dateInput.value;
+  profiles = getProfilesForDate(currentDate);
+  dateReadout.textContent = formatDateReadout(currentDate);
+  render();
+});
+
+const fileInput = document.getElementById('fileInput');
+const loadStatus = document.getElementById('loadStatus');
+const freshnessEl = document.getElementById('freshness');
+let lastGeneratedAt = null;
+
+function applyRealDataPayload(payload, sourceLabel){
+  indexRealData(payload);
+  lastGeneratedAt = payload.generated_at ? new Date(payload.generated_at) : null;
+  const n = Object.keys(realIndex).length;
+  document.querySelector('.t2').innerHTML =
+    `Cross-border transmission <b>${n} link${n===1?'':'s'} live from ENTSO-E, rest simulated</b>`;
+  render();
+  updateFreshnessDisplay();
+  return n;
+}
+
+function updateFreshnessDisplay(){
+  if(!lastGeneratedAt){
+    freshnessEl.className = 'none';
+    freshnessEl.textContent = 'No live data loaded';
+    return;
+  }
+  const mins = Math.round((Date.now() - lastGeneratedAt.getTime())/60000);
+  const label = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.round(mins/60)}h ago`;
+  freshnessEl.className = mins <= 90 ? 'live' : 'stale';
+  freshnessEl.textContent = `ENTSO-E data updated ${label}`;
+}
+setInterval(updateFreshnessDisplay, 30000);
+
+// Auto-load entsoe_data.json from the same origin (works once this app
+// is deployed via GitHub Pages alongside a scheduled Action that keeps
+// that file fresh — see the deployment README). Silently does nothing
+// if the file isn't there, e.g. when just opening this HTML file locally.
+async function autoLoadData(){
+  try{
+    const res = await fetch('entsoe_data.json?_=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) throw new Error('not found');
+    const payload = await res.json();
+    applyRealDataPayload(payload, 'auto');
+  }catch(err){
+    if(!lastGeneratedAt) updateFreshnessDisplay(); // stays "No live data loaded"
+  }
+}
+autoLoadData();
+setInterval(autoLoadData, 5*60*1000); // re-check every 5 min for a freshly-committed file
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  loadStatus.textContent = 'Reading…';
+  loadStatus.className = '';
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try{
+      const payload = JSON.parse(evt.target.result);
+      const n = applyRealDataPayload(payload, 'manual');
+      loadStatus.textContent = `${n} link${n===1?'':'s'} loaded`;
+      loadStatus.className = 'ok';
+    }catch(err){
+      loadStatus.textContent = 'Could not read file';
+      loadStatus.className = 'err';
+    }
+  };
+  reader.readAsText(file);
+});
+
+function render(){
+  let good=0, mod=0, crit=0, live=0;
+  LINKS.forEach((l, i) => {
+    const info = loadingInfo(i, currentDate, currentQ);
+    const st = statusFor(info.pct);
+    if(st==='good') good++; else if(st==='mod') mod++; else crit++;
+    if(info.isLive) live++;
+    const el = document.getElementById('mk'+i);
+    el.classList.remove('good','mod','crit','live-data');
+    el.classList.add(st);
+    if(info.isLive) el.classList.add('live-data');
+    el.querySelector('.ic-dot').style.background = statusColor[st];
+  });
+  document.getElementById('aggGood').textContent = good;
+  document.getElementById('aggMod').textContent = mod;
+  document.getElementById('aggCrit').textContent = crit;
+  clockReadout.textContent = pctLabel(currentQ);
+  if(openIdx !== null) updatePanel(openIdx);
+}
+
+slider.addEventListener('input', () => {
+  currentQ = parseInt(slider.value, 10);
+  render();
+});
+
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  playBtn.innerHTML = playing ? '&#10073;&#10073;' : '&#9654;';
+  if(playing){
+    playTimer = setInterval(() => {
+      currentQ = (currentQ + 1) % 96;
+      slider.value = currentQ;
+      render();
+    }, 220);
+  } else {
+    clearInterval(playTimer);
+  }
+});
+
+function openPanel(i){
+  openIdx = i;
+  document.getElementById('panel').classList.add('open');
+  updatePanel(i);
+}
+document.getElementById('panelClose').addEventListener('click', () => {
+  document.getElementById('panel').classList.remove('open');
+  openIdx = null;
+});
+
+function updatePanel(i){
+  const l = LINKS[i];
+  const info = loadingInfo(i, currentDate, currentQ);
+  const st = statusFor(info.pct);
+  document.getElementById('pRoute').textContent = l[0];
+  document.getElementById('pCountries').textContent = l[1] + ' \u2194 ' + l[2];
+  document.getElementById('pStatus').innerHTML =
+    `<span class="statusPill ${st}"><span class="pdot"></span>${statusLabel[st]} &middot; ${Math.round(info.pct)}% of limit</span>` +
+    `<span class="srcPill ${info.isLive?'live':'sim'}">${info.isLive ? 'Live ENTSO-E data' : 'Simulated'}</span>`;
+  document.getElementById('pFlow').textContent = info.flowMw.toLocaleString() + ' MW';
+  document.getElementById('pLimit').textContent = info.limitMw.toLocaleString() + ' MW' + (info.limitIsLive ? '' : ' (approx.)');
+  document.getElementById('pPct').textContent = Math.round(info.pct) + '%';
+  document.getElementById('pType').textContent = l[6];
+  document.getElementById('pNote').textContent = info.isLive
+    ? 'This link\u2019s values come from the ENTSO-E data you loaded, at 15-minute resolution.'
+    : 'No ENTSO-E data loaded for this link/date — showing the simulated model instead.';
+
+  const spark = document.getElementById('spark');
+  spark.innerHTML = '';
+  for(let q=0; q<96; q++){
+    const qInfo = loadingInfo(i, currentDate, q);
+    const bar = document.createElement('div');
+    const s = statusFor(qInfo.pct);
+    bar.className = 'sbar' + (q===currentQ ? ' now' : '');
+    bar.style.height = Math.max(2, qInfo.pct*0.6) + 'px';
+    bar.style.background = statusColor[s];
+    bar.style.opacity = qInfo.isLive ? '1' : '0.55';
+    bar.title = pctLabel(q) + ' — ' + Math.round(qInfo.pct) + '%' + (qInfo.isLive ? ' (live)' : ' (sim)');
+    spark.appendChild(bar);
+  }
+}
+
+document.getElementById('srcToggle').addEventListener('click', () => {
+  document.getElementById('sourcesPanel').classList.add('open');
+});
+document.getElementById('srcClose').addEventListener('click', () => {
+  document.getElementById('sourcesPanel').classList.remove('open');
+});
+
+dateReadout.textContent = formatDateReadout(currentDate);
+render();
+
+/* ============================================================
+   Heatmap view — interconnectors x time, aggregated over a
+   selectable date range, with a continuous color scale and
+   PNG/CSV export.
+   ============================================================ */
+const viewBtnMap = document.getElementById('viewBtnMap');
+const viewBtnHeat = document.getElementById('viewBtnHeat');
+const heatmapView = document.getElementById('heatmapView');
+const heatFrom = document.getElementById('heatFrom');
+const heatTo = document.getElementById('heatTo');
+const heatAggBy = document.getElementById('heatAggBy');
+const heatMetric = document.getElementById('heatMetric');
+const heatSort = document.getElementById('heatSort');
+
+(function initHeatRange(){
+  const toDate = new Date(dateInput.max + 'T00:00:00');
+  const fromDate = new Date(toDate); fromDate.setDate(fromDate.getDate()-6);
+  heatFrom.min = dateInput.min; heatFrom.max = dateInput.max;
+  heatTo.min = dateInput.min; heatTo.max = dateInput.max;
+  heatFrom.value = toISO(fromDate);
+  heatTo.value = toISO(toDate);
+})();
+
+function switchView(view){
+  if(view === 'heat'){
+    viewBtnHeat.classList.add('active'); viewBtnMap.classList.remove('active');
+    heatmapView.classList.add('open');
+    renderHeatmap();
+  } else {
+    viewBtnMap.classList.add('active'); viewBtnHeat.classList.remove('active');
+    heatmapView.classList.remove('open');
+    setTimeout(() => map.invalidateSize(), 50);
+  }
+}
+viewBtnMap.addEventListener('click', () => switchView('map'));
+viewBtnHeat.addEventListener('click', () => switchView('heat'));
+[heatFrom, heatTo, heatAggBy, heatMetric, heatSort].forEach(el =>
+  el.addEventListener('change', renderHeatmap)
+);
+
+function dateRangeList(fromStr, toStr){
+  const out = [];
+  let d = new Date(fromStr + 'T00:00:00');
+  const end = new Date(toStr + 'T00:00:00');
+  while(d <= end){ out.push(toISO(d)); d.setDate(d.getDate()+1); }
+  return out;
+}
+
+// Builds the link x column matrix for the current controls.
+// Returns {cols, rows} where rows = [{linkId, values:[...]}], values
+// aligned to cols (either 24 hour-of-day buckets, or one per day).
+function buildHeatMatrix(){
+  const fromStr = heatFrom.value, toStr = heatTo.value;
+  if(!fromStr || !toStr || fromStr > toStr) return null;
+  const days = dateRangeList(fromStr, toStr);
+  const aggBy = heatAggBy.value; // 'hour' | 'day'
+  const metric = heatMetric.value; // 'avg' | 'peak' | 'crit'
+
+  const cols = aggBy === 'hour'
+    ? Array.from({length:24}, (_,h) => (h<10?'0':'')+h+':00')
+    : days.map(d => { const dd=new Date(d+'T00:00:00'); return dd.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}); });
+
+  const rows = LINKS.map((l, i) => {
+    // bucket[colIndex] = array of pct values collected into that bucket
+    const buckets = cols.map(() => []);
+    days.forEach(dateStr => {
+      for(let q=0; q<96; q++){
+        const info = loadingInfo(i, dateStr, q);
+        const colIdx = aggBy === 'hour' ? Math.floor(q/4) : days.indexOf(dateStr);
+        buckets[colIdx].push(info.pct);
+      }
+    });
+    const values = buckets.map(arr => {
+      if(!arr.length) return null;
+      if(metric === 'avg') return arr.reduce((a,b)=>a+b,0)/arr.length;
+      if(metric === 'peak') return Math.max(...arr);
+      // crit: count of quarter-hours over 85%, expressed as hours (÷4)
+      return arr.filter(v => v>85).length / 4;
+    });
+    return {linkId: l[0], i, values};
+  });
+
+  return {cols, rows, metric, aggBy, days};
+}
+
+function heatColor(v, metric, maxForCrit){
+  if(v === null || v === undefined) return '#1B3145';
+  if(metric === 'crit'){
+    const t = maxForCrit > 0 ? Math.min(1, v/maxForCrit) : 0;
+    return lerpColor('#1B3145', '#E75A4C', t);
+  }
+  // 0-100+ percentage: green -> orange -> red continuous gradient
+  const t = Math.max(0, Math.min(1, v/100));
+  if(t < 0.6) return lerpColor('#1E6B47', '#33C17B', t/0.6*0.85+0.15);
+  if(t < 0.85) return lerpColor('#33C17B', '#F0A73C', (t-0.6)/0.25);
+  return lerpColor('#F0A73C', '#E75A4C', Math.min(1,(t-0.85)/0.19));
+}
+function lerpColor(c1, c2, t){
+  const p = (c) => [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
+  const [r1,g1,b1] = p(c1), [r2,g2,b2] = p(c2);
+  const r = Math.round(r1+(r2-r1)*t), g = Math.round(g1+(g2-g1)*t), b = Math.round(b1+(b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function renderHeatmap(){
+  const data = buildHeatMatrix();
+  const svg = document.getElementById('heatSvg');
+  const insightEl = document.getElementById('heatInsight');
+  if(!data){ svg.innerHTML=''; insightEl.innerHTML=''; return; }
+
+  let rows = data.rows.slice();
+  if(heatSort.value === 'worst'){
+    rows.sort((a,b) => {
+      const am = Math.max(...a.values.filter(v=>v!==null), 0);
+      const bm = Math.max(...b.values.filter(v=>v!==null), 0);
+      return bm - am;
+    });
+  } else {
+    rows.sort((a,b) => a.linkId.localeCompare(b.linkId));
+  }
+
+  const labelW = 190, cellH = 20, cellGap = 1, headerH = 34, leftPad = 10, topPad = 10;
+  const cellW = Math.max(26, Math.min(46, 900/data.cols.length));
+  const w = labelW + data.cols.length*cellW + leftPad*2;
+  const h = headerH + rows.length*(cellH+cellGap) + topPad;
+
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.style.background = '#0E1B2A';
+
+  let maxCrit = 0;
+  if(data.metric === 'crit'){
+    rows.forEach(r => r.values.forEach(v => { if(v!==null && v>maxCrit) maxCrit = v; }));
+  }
+
+  let svgParts = [];
+  // column headers
+  data.cols.forEach((c, ci) => {
+    const x = leftPad + labelW + ci*cellW + cellW/2;
+    svgParts.push(`<text x="${x}" y="${topPad+headerH-12}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8FA3B8">${c}</text>`);
+  });
+
+  rows.forEach((r, ri) => {
+    const y = topPad + headerH + ri*(cellH+cellGap);
+    svgParts.push(`<text x="${leftPad+labelW-10}" y="${y+cellH*0.68}" text-anchor="end" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#E8EEF4">${r.linkId}</text>`);
+    r.values.forEach((v, ci) => {
+      const x = leftPad + labelW + ci*cellW;
+      const fill = heatColor(v, data.metric, maxCrit);
+      const label = v===null ? '' : (data.metric==='crit' ? v.toFixed(1) : Math.round(v));
+      svgParts.push(`<rect x="${x}" y="${y}" width="${cellW-cellGap}" height="${cellH}" rx="2" fill="${fill}"><title>${r.linkId} — ${data.cols[ci]}: ${v===null?'no data':label+(data.metric==='crit'?'h':'%')}</title></rect>`);
+      if(cellW > 30 && v !== null){
+        svgParts.push(`<text x="${x+(cellW-cellGap)/2}" y="${y+cellH*0.68}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.85)">${label}</text>`);
+      }
+    });
+  });
+  svg.innerHTML = svgParts.join('');
+
+  // ---- Insights ----
+  let worstCell = {v:-1, link:null, col:null};
+  let colTotals = data.cols.map(() => ({sum:0,n:0}));
+  rows.forEach(r => {
+    r.values.forEach((v, ci) => {
+      if(v===null) return;
+      if(data.metric !== 'crit' && v > worstCell.v){ worstCell = {v, link:r.linkId, col:data.cols[ci]}; }
+      if(data.metric === 'crit' && v > worstCell.v){ worstCell = {v, link:r.linkId, col:data.cols[ci]}; }
+      colTotals[ci].sum += v; colTotals[ci].n++;
+    });
+  });
+  let worstCol = {avg:-1, col:null};
+  colTotals.forEach((c, ci) => {
+    if(c.n && c.sum/c.n > worstCol.avg) worstCol = {avg:c.sum/c.n, col:data.cols[ci]};
+  });
+  const worstLink = rows[0];
+  const worstLinkAvg = worstLink ? Math.max(...worstLink.values.filter(v=>v!==null), 0) : null;
+
+  const unit = data.metric === 'crit' ? 'h over 85%' : '%';
+  insightEl.innerHTML = `
+    <div class="insightCard">
+      <div class="il">BIGGEST CONGESTION WINDOW${data.aggBy==='hour' ? ' (hour of day)' : ' (day)'}</div>
+      <div class="iv crit">${worstCol.col ?? '—'}</div>
+      <div class="is">Averaging ${worstCol.avg>=0 ? worstCol.avg.toFixed(1) : '—'}${unit} across all interconnectors in this range</div>
+    </div>
+    <div class="insightCard">
+      <div class="il">MOST CONGESTED SINGLE LINK</div>
+      <div class="iv crit">${worstLink ? worstLink.linkId : '—'}</div>
+      <div class="is">Peak of ${worstLinkAvg!==null ? worstLinkAvg.toFixed(1) : '—'}${unit} at ${worstCell.col ?? '—'} in this range</div>
+    </div>
+    <div class="insightCard">
+      <div class="il">SELECTED RANGE</div>
+      <div class="iv">${data.days.length} day${data.days.length===1?'':'s'}</div>
+      <div class="is">${heatFrom.value} → ${heatTo.value}</div>
+    </div>
+  `;
+
+  window._lastHeatData = data;
+  window._lastHeatRows = rows;
+}
+
+function triggerDownload(href, filename){
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+document.getElementById('heatDownloadPng').addEventListener('click', () => {
+  const statusEl = document.getElementById('heatDlStatus');
+  statusEl.className = ''; statusEl.textContent = 'Rendering…';
+  try{
+    const svg = document.getElementById('heatSvg');
+    if(!svg || !svg.getAttribute('width')){
+      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet';
+      return;
+    }
+    const w = parseInt(svg.getAttribute('width'),10), h = parseInt(svg.getAttribute('height'),10);
+    const scale = 2;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+    const img = new Image();
+    img.onload = () => {
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = w*scale; canvas.height = h*scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0E1B2A'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+        const pngUrl = canvas.toDataURL('image/png');
+        triggerDownload(pngUrl, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.png`);
+        statusEl.className = 'ok'; statusEl.textContent = 'Downloaded';
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      }catch(err){
+        statusEl.className = 'err'; statusEl.textContent = 'Export failed: ' + err.message;
+      }
+    };
+    img.onerror = () => {
+      statusEl.className = 'err'; statusEl.textContent = 'Could not render image';
+    };
+    img.src = svgUrl;
+  }catch(err){
+    statusEl.className = 'err'; statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+document.getElementById('heatDownloadCsv').addEventListener('click', () => {
+  const statusEl = document.getElementById('heatDlStatus');
+  try{
+    const data = window._lastHeatData, rows = window._lastHeatRows;
+    if(!data || !rows){
+      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet';
+      return;
+    }
+    const lines = ['link,' + data.cols.join(',')];
+    rows.forEach(r => {
+      lines.push(r.linkId + ',' + r.values.map(v => v===null?'':v.toFixed(2)).join(','));
+    });
+    const csvUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
+    triggerDownload(csvUrl, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.csv`);
+    statusEl.className = 'ok'; statusEl.textContent = 'Downloaded';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  }catch(err){
+    statusEl.className = 'err'; statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+</script>
+</body>
+</html>

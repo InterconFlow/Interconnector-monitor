@@ -1,0 +1,46 @@
+name: Fetch ENTSO-E data
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub's scheduler can run a few minutes late
+    # under load — that's normal and fine for this use case.
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install entsoe-py pandas python-dateutil
+
+      - name: Fetch latest ENTSO-E data
+        env:
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
+        # A 30-day rolling window keeps each run quick. The mockup's date
+        # picker still allows up to 90 days back — dates outside whatever
+        # window you fetch here just fall back to the simulated model,
+        # which is expected and harmless. Raise --days if you want more
+        # history and don't mind longer run times (each extra day doesn't
+        # add API calls, just processing — but very large ranges can hit
+        # ENTSO-E's own per-request limits, so keep it well under 90).
+        run: python fetch_entsoe_data.py --token "$ENTSOE_TOKEN" --days 30 --out entsoe_data.json
+
+      - name: Commit updated data
+        run: |
+          git config user.name "entsoe-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add entsoe_data.json
+          git diff --quiet --cached || git commit -m "Update ENTSO-E data ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git push
