@@ -62,7 +62,11 @@ BORDERS = [
     ("FR–ES", "FR", "ES"),
     ("FR–DE", "FR", "DE_LU"),
     ("FR–BE", "FR", "BE"),
-    ("FR–IT", "FR", "IT_NORD"),
+    ("FR–IT (AC ties)", "FR", "IT_NORD"),
+    # Note: the Savoie-Piemonte HVDC merchant line isn't separately
+    # published by ENTSO-E's Transparency API (only the FR-IT zone
+    # border total is) — that entry in the app will stay on the
+    # simulated model even after a successful fetch, which is expected.
     ("FR–CH", "FR", "CH"),
     ("FR–GB (IFA)", "FR", "GB"),
     ("DE–PL", "DE_LU", "PL"),
@@ -124,6 +128,16 @@ BORDERS = [
     ("ES–PT", "ES", "PT"),
     ("GB–IE (EWIC)", "GB", "IE"),
     ("DK–GB (Viking Link)", "DK_1", "GB"),
+    # Newer additions — ENTSO-E area codes for MD/XK are less consistently
+    # populated than core-EU zones, so these are more likely than most to
+    # show up as "no data" / "failed" and fall back to simulation. Worth
+    # trying anyway since they're real, if lower-priority, interconnections.
+    ("MD–RO", "MD", "RO"),
+    ("MD–UA", "MD", "UA_IPS"),
+    ("XK–AL", "XK", "AL"),
+    ("XK–ME", "XK", "ME"),
+    ("XK–MK", "XK", "MK"),
+    ("XK–RS", "XK", "RS"),
 ]
 
 # entsoe-py methods this script tries, in order of preference, for flow data.

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -24,6 +25,7 @@
     --crit:#E75A4C;
     --crit-dim:#8C2E24;
     --steel:#4E7098;
+    --topbar-h: 108px;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;padding:0;}
@@ -37,20 +39,26 @@
 
   #map{
     position:absolute;
-    top:64px; left:0; right:0; bottom:0;
+    top:var(--topbar-h); left:0; right:0; bottom:0;
     background:var(--bg);
   }
   .leaflet-container{ background: var(--bg); }
 
   /* ---- Top bar ---- */
   #topbar{
-    position:absolute; top:0; left:0; right:0; height:64px;
+    position:absolute; top:0; left:0; right:0; height:var(--topbar-h);
     background:linear-gradient(180deg, var(--panel) 0%, #142433 100%);
     border-bottom:1px solid var(--line);
-    display:flex; align-items:center;
-    padding:0 20px;
-    gap:28px;
+    display:flex; flex-direction:column; justify-content:center;
+    gap:10px;
+    padding:12px 20px;
     z-index:1000;
+  }
+  #topbarRow1{
+    display:flex; align-items:center; gap:20px; min-width:0;
+  }
+  #topbarRow2{
+    display:flex; align-items:center; gap:18px; min-width:0;
   }
   .brand{
     display:flex; flex-direction:column; line-height:1.15; flex-shrink:0;
@@ -92,11 +100,12 @@
   /* ---- Heatmap view ---- */
   #heatmapView{
     display:none;
-    position:absolute; top:64px; left:0; right:0; bottom:0;
+    position:absolute; top:var(--topbar-h); left:0; right:0; bottom:0;
     background:var(--bg);
     overflow-y:auto; overflow-x:hidden;
     -webkit-overflow-scrolling:touch;
     padding:20px 24px 40px;
+    z-index:900; /* above the map's own controls/panes, below the topbar */
   }
   #heatmapView.open{ display:block; }
   #heatControls{
@@ -133,12 +142,55 @@
   .insightCard .is{ font-size:11.5px; color:var(--text-dim); margin-top:4px; }
   .insightCard .iv.crit{ color:var(--crit); }
   #heatScrollWrap{
-    overflow-x:auto; overflow-y:visible;
+    overflow-x:auto; overflow-y:auto;
     -webkit-overflow-scrolling:touch;
     max-width:100%;
     border:1px solid var(--line); border-radius:8px;
   }
   #heatSvg{ display:block; }
+
+  /* ---- Specs view ---- */
+  #specsView{
+    display:none;
+    position:absolute; top:var(--topbar-h); left:0; right:0; bottom:0;
+    background:var(--bg);
+    overflow:hidden;
+    padding:20px 24px 24px;
+    z-index:900;
+    flex-direction:column;
+  }
+  #specsView.open{ display:flex; }
+  #specsCaveat{
+    font-size:12px; line-height:1.6; color:var(--text-dim);
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:12px 16px; margin-bottom:16px; flex-shrink:0;
+  }
+  .verifiedTag, .estTag{
+    display:inline-block; padding:1px 8px; border-radius:10px; font-size:10.5px; font-weight:600;
+  }
+  .verifiedTag{ background:rgba(51,193,123,0.15); color:var(--good); }
+  .estTag{ background:rgba(240,167,60,0.15); color:var(--mod); }
+  #specsScrollWrap{
+    overflow:auto; flex:1;
+    border:1px solid var(--line); border-radius:8px;
+  }
+  #specsTable{
+    width:100%; border-collapse:collapse; font-size:12px;
+  }
+  #specsTable thead th{
+    position:sticky; top:0; z-index:1;
+    background:var(--panel-2); color:var(--text-dim); font-weight:600;
+    text-align:left; padding:10px 12px; border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  #specsTable tbody td{
+    padding:9px 12px; border-bottom:1px solid var(--line);
+    color:var(--text); vertical-align:top;
+  }
+  #specsTable tbody tr:hover{ background:rgba(255,255,255,0.03); }
+  #specsTable td.linkName{ font-weight:500; white-space:nowrap; }
+  #specsTable td.small{ color:var(--text-dim); font-size:11.5px; }
+
 
   #loadBtn{
     font-size:12px; font-weight:500; color:var(--text);
@@ -206,7 +258,7 @@
 
   /* ---- Detail panel ---- */
   #panel{
-    position:absolute; top:80px; right:16px; bottom:20px; width:340px;
+    position:absolute; top:calc(var(--topbar-h) + 16px); right:16px; bottom:20px; width:340px;
     background:rgba(19,35,49,0.97);
     border:1px solid var(--line);
     border-radius:10px;
@@ -308,6 +360,12 @@
     width:6px; height:6px; border-radius:50%;
     background:#fff; border:1px solid rgba(0,0,0,0.4); z-index:2;
   }
+  /* Geo Heatmap mode: hide the discrete circles/tooltips entirely so
+     only the smooth intensity blobs show — this is the whole point of
+     that view (no circles, no numbers to parse). */
+  #map.geoheat-mode .ic-marker{ opacity:0; }
+  #map.geoheat-mode .leaflet-marker-icon{ pointer-events:none; }
+  #map.geoheat-mode .leaflet-tooltip{ display:none; }
 
   @keyframes pulseRing{
     0%{ transform:translate(-50%,-50%) scale(1); opacity:0.55; }
@@ -327,7 +385,7 @@
   .leaflet-popup-content b{ font-size:13px; }
 
   #banner{
-    position:absolute; top:76px; left:50%; transform:translateX(-50%);
+    position:absolute; top:calc(var(--topbar-h) + 12px); left:50%; transform:translateX(-50%);
     z-index:1500; background:rgba(21,40,56,0.96); border:1px solid var(--line);
     padding:8px 16px; border-radius:8px; font-size:12px; color:var(--text-dim);
     display:flex; align-items:center; gap:10px; max-width:520px;
@@ -340,44 +398,88 @@
   ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
   ::-webkit-scrollbar-track{ background:transparent; }
 
+  @media (max-width: 1050px){
+    :root{ --topbar-h: 150px; }
+    #topbarRow1{ flex-wrap:wrap; row-gap:8px; }
+  }
   @media (max-width: 760px){
-    #panel{ width:calc(100% - 32px); }
+    :root{ --topbar-h: 190px; }
+    #panel{ width:calc(100% - 24px); right:12px; }
     .agg{ display:none; }
     #dateReadout{ display:none; }
+    .brand .t2{ display:none; }
+    #freshness{ font-size:10px; padding:5px 8px; }
+    #loadBtn{ font-size:11px; padding:6px 10px; }
+    #legend{ left:10px; bottom:10px; min-width:0; padding:9px 11px; font-size:11px; }
+    #legend .h{ margin-bottom:6px; }
+    .lg-row{ margin-bottom:4px; }
+    #banner{ max-width:calc(100% - 24px); font-size:11px; padding:7px 12px; }
+    #sourcesPanel{ left:10px; bottom:10px; width:calc(100% - 20px); }
   }
+  @media (max-width: 560px){
+    :root{ --topbar-h: 178px; }
+    #topbarRow1{ gap:10px; }
+    .brand .t1{ font-size:13px; }
+    #viewToggle{ order:3; width:100%; overflow-x:auto; }
+    .viewBtn{ padding:8px 10px; font-size:11.5px; white-space:nowrap; }
+    .divider{ display:none; }
+    #dataLoadWrap{ order:2; margin-left:auto; }
+    #timectl{ gap:10px; }
+    #playBtn{ width:38px; height:38px; flex-shrink:0; }
+    #dateInput{ font-size:11px; padding:8px 6px; }
+    #clockReadout{ font-size:17px; min-width:56px; }
+    #panel{ top:auto; bottom:0; right:0; left:0; width:100%; border-radius:14px 14px 0 0; max-height:70vh; }
+    .insightCard{ min-width:100%; }
+    #heatControls{ gap:12px; }
+    .hc-group select, .hc-group input{ font-size:13px; padding:9px 10px; } /* bigger touch targets */
+    .hcBtn{ padding:11px 14px; height:auto; font-size:13px; }
+    #specsTable, #heatSvg{ font-size:11px; }
+  }
+  /* Touch devices: enlarge marker tap targets beyond their visual size
+     without changing how they look on precision-pointer (mouse) devices */
+  .coarse-pointer .ic-marker{
+    width:28px; height:28px; margin:-7px 0 0 -7px;
+  }
+  .coarse-pointer .ic-dot{ width:14px; height:14px; margin:7px; }
 </style>
 </head>
 <body>
 
 <div id="topbar">
-  <div class="brand">
-    <div class="t1">Interconnector Load Monitor</div>
-    <div class="t2">Cross-border transmission &middot; 15-min resolution <b>(approximate / simulated data)</b></div>
+  <div id="topbarRow1">
+    <div class="brand">
+      <div class="t1">Interconnector Load Monitor</div>
+      <div class="t2">Cross-border transmission &middot; 15-min resolution <b>(approximate / simulated data)</b></div>
+    </div>
+    <div class="divider"></div>
+    <div id="viewToggle">
+      <button class="viewBtn active" id="viewBtnMap">Map</button>
+      <button class="viewBtn" id="viewBtnGeoHeat">Geo Heatmap</button>
+      <button class="viewBtn" id="viewBtnHeat">Table</button>
+      <button class="viewBtn" id="viewBtnSpecs">Specs</button>
+    </div>
+    <div class="hc-spacer"></div>
+    <div class="agg">
+      <div class="cell"><div class="v good num" id="aggGood">–</div><div class="l">normal</div></div>
+      <div class="cell"><div class="v mod num" id="aggMod">–</div><div class="l">moderate</div></div>
+      <div class="cell"><div class="v crit num" id="aggCrit">–</div><div class="l">critical</div></div>
+    </div>
+    <div class="divider"></div>
+    <div id="dataLoadWrap">
+      <div id="freshness">Checking for live data…</div>
+      <label id="loadBtn" for="fileInput">Load file instead</label>
+      <input type="file" id="fileInput" accept="application/json" style="display:none;">
+      <div id="loadStatus"></div>
+    </div>
   </div>
-  <div class="divider"></div>
-  <div id="dataLoadWrap">
-    <div id="freshness">Checking for live data…</div>
-    <label id="loadBtn" for="fileInput">Load file instead</label>
-    <input type="file" id="fileInput" accept="application/json" style="display:none;">
-    <div id="loadStatus"></div>
-  </div>
-  <div class="divider"></div>
-  <div id="timectl">
-    <input type="date" id="dateInput" class="num">
-    <div id="playBtn">&#9654;</div>
-    <input type="range" id="hourSlider" min="0" max="95" step="1" value="32">
-    <div id="clockReadout" class="num">08:00</div>
-  </div>
-  <div id="dateReadout">—</div>
-  <div class="agg">
-    <div class="cell"><div class="v good num" id="aggGood">–</div><div class="l">normal</div></div>
-    <div class="cell"><div class="v mod num" id="aggMod">–</div><div class="l">moderate</div></div>
-    <div class="cell"><div class="v crit num" id="aggCrit">–</div><div class="l">critical</div></div>
-  </div>
-  <div class="divider"></div>
-  <div id="viewToggle">
-    <button class="viewBtn active" id="viewBtnMap">Map</button>
-    <button class="viewBtn" id="viewBtnHeat">Heatmap</button>
+  <div id="topbarRow2">
+    <div id="timectl">
+      <input type="date" id="dateInput" class="num">
+      <div id="playBtn">&#9654;</div>
+      <input type="range" id="hourSlider" min="0" max="95" step="1" value="32">
+      <div id="clockReadout" class="num">08:00</div>
+    </div>
+    <div id="dateReadout">—</div>
   </div>
 </div>
 
@@ -423,6 +525,23 @@
   <div id="heatInsight"></div>
   <div id="heatScrollWrap">
     <svg id="heatSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<div id="specsView">
+  <div id="specsCaveat">
+    <b>On accuracy:</b> topology, capacity (NTC) and named-project specs below are sourced from ENTSO-E's public grid data and individual project documentation where named (marked <span class="verifiedTag">documented</span>). For the many plain AC ties where TSOs don't publish per-line conductor detail, voltage/conductor/cross-section are honest <span class="estTag">representative estimates</span> for that voltage class — not confirmed per physical line.
+  </div>
+  <div id="specsScrollWrap">
+    <table id="specsTable">
+      <thead>
+        <tr>
+          <th>Interconnector</th><th>Countries</th><th>Type</th><th>Voltage</th>
+          <th>Conductor</th><th>Cross-section</th><th>Technical limit</th><th>Source</th>
+        </tr>
+      </thead>
+      <tbody id="specsTbody"></tbody>
+    </table>
   </div>
 </div>
 
@@ -488,7 +607,8 @@ const LINKS = [
   ["FR–ES","France","Spain",42.62,2.65,2800,"HVDC (INELFE)"],
   ["FR–DE","France","Germany",49.15,6.55,3500,"AC"],
   ["FR–BE","France","Belgium",50.55,3.25,3300,"AC"],
-  ["FR–IT","France","Italy",45.02,6.85,2650,"AC/HVDC"],
+  ["FR–IT (AC ties)","France","Italy",45.02,6.85,1450,"AC"],
+  ["FR–IT (Savoie-Piemonte HVDC)","France","Italy",45.30,6.70,1200,"HVDC"],
   ["FR–CH","France","Switzerland",46.20,6.05,3000,"AC"],
   ["FR–GB (IFA)","France","Great Britain",50.92,1.60,2000,"HVDC"],
   ["FR–GB (IFA2)","France","Great Britain",50.55,0.55,1000,"HVDC"],
@@ -556,8 +676,64 @@ const LINKS = [
   ["ES–PT","Spain","Portugal",41.50,-7.00,3500,"AC"],
   ["GB–IE (Moyle)","Great Britain","Northern Ireland",55.00,-6.00,500,"HVDC"],
   ["GB–IE (EWIC)","Great Britain","Ireland",53.50,-5.00,500,"HVDC"],
-  ["DK–GB (Viking Link)","Denmark","Great Britain",55.60,6.50,1400,"HVDC"]
+  ["DK–GB (Viking Link)","Denmark","Great Britain",55.60,6.50,1400,"HVDC"],
+  ["MD–RO","Moldova","Romania",45.70,28.40,600,"AC"],
+  ["MD–UA","Moldova","Ukraine",47.90,29.60,200,"AC"],
+  ["XK–AL","Kosovo","Albania",42.10,20.50,400,"AC"],
+  ["XK–ME","Kosovo","Montenegro",42.70,20.00,400,"AC"],
+  ["XK–MK","Kosovo","North Macedonia",42.10,21.30,400,"AC"],
+  ["XK–RS","Kosovo","Serbia",43.20,21.00,600,"AC"]
 ];
+
+/* ============================================================
+   Technical specifications, shown in the "Specs" tab.
+   For well-documented named HVDC projects, these are the real
+   published specs. For the rest — mostly plain AC ties, which are
+   overwhelmingly the majority of European cross-border links — TSOs
+   generally don't publish per-line conductor/cross-section data
+   publicly, so these are honestly-labeled representative estimates
+   for the relevant voltage/capacity class, not verified per-line specs.
+   ============================================================ */
+const SPECS_OVERRIDE = {
+  "NO–DE (NordLink)": {voltage:"±525 kV DC", conductor:"XLPE submarine + underground cable", crossSection:"~2500 mm² Cu", source:"Statnett / TenneT project documentation", verified:true},
+  "NL–NO (NorNed)": {voltage:"±450 kV DC", conductor:"Mass-impregnated submarine cable", crossSection:"~1000 mm² Cu", source:"Statnett / TenneT project documentation", verified:true},
+  "NL–GB (BritNed)": {voltage:"±450 kV DC", conductor:"Mass-impregnated submarine cable", crossSection:"~900 mm² Cu", source:"National Grid / TenneT project documentation", verified:true},
+  "FR–GB (ElecLink)": {voltage:"±320 kV DC (VSC)", conductor:"XLPE cable, routed through the Channel Tunnel", crossSection:"~1200 mm² Cu", source:"ElecLink project documentation", verified:true},
+  "FR–GB (IFA)": {voltage:"±270 kV DC", conductor:"Mass-impregnated submarine cable", crossSection:"~900 mm² Cu", source:"National Grid / RTE project documentation", verified:true},
+  "FR–GB (IFA2)": {voltage:"±320 kV DC (VSC)", conductor:"XLPE submarine cable", crossSection:"~900 mm² Cu", source:"National Grid / RTE project documentation", verified:true},
+  "DE–BE (ALEGrO)": {voltage:"±320 kV DC (VSC)", conductor:"XLPE underground cable", crossSection:"~1200 mm² Cu", source:"Amprion / Elia project documentation", verified:true},
+  "DK–GB (Viking Link)": {voltage:"±525 kV DC (VSC)", conductor:"XLPE submarine + underground cable", crossSection:"~2500 mm² Cu", source:"Energinet / National Grid project documentation", verified:true},
+  "NO–DK (Skagerrak)": {voltage:"±250 to ±500 kV DC (4 poles, mixed LCC/VSC)", conductor:"Mass-impregnated & XLPE submarine cable (varies by pole)", crossSection:"~1000–2500 mm² Cu (varies by pole)", source:"Statnett / Energinet project documentation", verified:true},
+  "SE–LT (NordBalt)": {voltage:"±300 kV DC (VSC)", conductor:"XLPE submarine + underground cable", crossSection:"~1200 mm² Cu", source:"Svenska kraftnät / Litgrid project documentation", verified:true},
+  "SE–PL (SwePol)": {voltage:"±450 kV DC", conductor:"Mass-impregnated submarine cable", crossSection:"~900 mm² Cu", source:"Svenska kraftnät / PSE project documentation", verified:true},
+  "SE–DE (Baltic Cable)": {voltage:"±450 kV DC", conductor:"Mass-impregnated submarine cable", crossSection:"~900 mm² Cu", source:"Baltic Cable AB project documentation", verified:true},
+  "FR–ES": {voltage:"±320 kV DC (INELFE) + 400 kV AC ties", conductor:"XLPE underground cable (INELFE) + ACSR overhead (AC ties)", crossSection:"~1200 mm² Cu (INELFE)", source:"RTE / REE (INELFE) project documentation", verified:true},
+  "FR–IT (Savoie-Piemonte HVDC)": {voltage:"±320 kV DC (VSC)", conductor:"XLPE underground cable", crossSection:"~1200 mm² Cu", source:"RTE / Terna project documentation", verified:true},
+  "FI–EE (Estlink)": {voltage:"±150 kV DC (Estlink1) / ±450 kV DC (Estlink2)", conductor:"Mass-impregnated submarine cable", crossSection:"~700–900 mm² Cu (varies by cable)", source:"Fingrid / Elering project documentation", verified:true}
+};
+
+function specFor(link){
+  const [id, cA, cB, lat, lon, ntc, type] = link;
+  if(SPECS_OVERRIDE[id]) return SPECS_OVERRIDE[id];
+  const isDc = /HVDC|DC/.test(type);
+  if(isDc){
+    return {
+      voltage: ntc >= 1200 ? "±320–525 kV DC (typical for this rating)" : "±150–320 kV DC (typical for this rating)",
+      conductor: "XLPE or mass-impregnated submarine/underground cable (typical for this class)",
+      crossSection: "~900–1800 mm² Cu (typical, not TSO-confirmed)",
+      source: "Representative estimate — exact spec not publicly confirmed for this link",
+      verified: false
+    };
+  }
+  const voltage = ntc >= 2200 ? "400 kV AC (multiple circuits, typical)" : ntc >= 900 ? "400 kV AC (typical)" : "220 kV AC (typical)";
+  return {
+    voltage,
+    conductor: "ACSR twin-bundle overhead conductor, e.g. \u2018Zebra\u2019/\u2018Condor\u2019 class (typical for this voltage)",
+    crossSection: "~2×550 mm² (typical, not TSO-confirmed per line)",
+    source: "Representative estimate based on typical European EHV practice \u2014 not TSO-confirmed",
+    verified: false
+  };
+}
 
 /* ============================================================
    Simulated hourly loading generator — deterministic per link
@@ -722,12 +898,19 @@ function loadingInfo(i, dateStr, q){
 /* ============================================================
    Map setup
    ============================================================ */
+// Touch devices get bigger marker tap targets (see .coarse-pointer CSS)
+// without changing the precise, small dots mouse users get.
+if(window.matchMedia && window.matchMedia('(pointer: coarse)').matches){
+  document.body.classList.add('coarse-pointer');
+}
+
 const map = L.map('map', {
   zoomControl:false,
   attributionControl:true,
   minZoom:3,
   maxBounds:[[30,-30],[72,45]],
-  maxBoundsViscosity:0.6
+  maxBoundsViscosity:0.6,
+  tap:true
 }).setView([50.5, 12], 4);
 
 L.control.zoom({position:'bottomright'}).addTo(map);
@@ -897,6 +1080,7 @@ function render(){
   document.getElementById('aggCrit').textContent = crit;
   clockReadout.textContent = pctLabel(currentQ);
   if(openIdx !== null) updatePanel(openIdx);
+  if(typeof currentView !== 'undefined' && currentView === 'geoheat') updateGeoHeatLayer();
 }
 
 slider.addEventListener('input', () => {
@@ -968,7 +1152,6 @@ document.getElementById('srcClose').addEventListener('click', () => {
 });
 
 dateReadout.textContent = formatDateReadout(currentDate);
-render();
 
 /* ============================================================
    Heatmap view — interconnectors x time, aggregated over a
@@ -976,8 +1159,11 @@ render();
    PNG/CSV export.
    ============================================================ */
 const viewBtnMap = document.getElementById('viewBtnMap');
+const viewBtnGeoHeat = document.getElementById('viewBtnGeoHeat');
 const viewBtnHeat = document.getElementById('viewBtnHeat');
+const viewBtnSpecs = document.getElementById('viewBtnSpecs');
 const heatmapView = document.getElementById('heatmapView');
+const specsView = document.getElementById('specsView');
 const heatFrom = document.getElementById('heatFrom');
 const heatTo = document.getElementById('heatTo');
 const heatAggBy = document.getElementById('heatAggBy');
@@ -993,19 +1179,90 @@ const heatSort = document.getElementById('heatSort');
   heatTo.value = toISO(toDate);
 })();
 
+// ---- Geo heatmap layer: smooth intensity blobs at each interconnector's
+// location instead of discrete numbered circles, colored on the same
+// green->orange->red scale used everywhere else in the app. ----
+const geoHeatLayer = L.heatLayer([], {
+  radius: 36, blur: 8, maxZoom: 9, minOpacity: 0.4, max: 1.0,
+  // Sharp edges pinned to the app's real 60% / 85% thresholds, so a link
+  // visibly flips color the instant it crosses into moderate/critical —
+  // rather than a smooth gradient where most everyday values (30-70%)
+  // would otherwise sit in one visually-flat band.
+  gradient: {
+    0.0:'#1E6B47', 0.599:'#1E6B47',
+    0.60:'#F0A73C', 0.849:'#F0A73C',
+    0.85:'#E75A4C', 1.0:'#E75A4C'
+  }
+}).addTo(map);
+if(geoHeatLayer._canvas) geoHeatLayer._canvas.style.display = 'none';
+
+function updateGeoHeatLayer(){
+  const points = LINKS.map((l, i) => {
+    const info = loadingInfo(i, currentDate, currentQ);
+    return [l[3], l[4], Math.max(0.06, info.pct/100)];
+  });
+  geoHeatLayer.setLatLngs(points);
+  geoHeatLayer.redraw();
+}
+
+function renderSpecsTable(){
+  const tbody = document.getElementById('specsTbody');
+  const rowsHtml = LINKS.map((l, i) => {
+    const spec = specFor(l);
+    const tag = spec.verified
+      ? '<span class="verifiedTag">documented</span>'
+      : '<span class="estTag">estimate</span>';
+    return `<tr>
+      <td class="linkName">${l[0]}</td>
+      <td class="small">${l[1]} \u2194 ${l[2]}</td>
+      <td>${l[6]}</td>
+      <td>${spec.voltage}</td>
+      <td>${spec.conductor}</td>
+      <td>${spec.crossSection}</td>
+      <td>${l[5].toLocaleString()} MW</td>
+      <td class="small">${tag}<br>${spec.source}</td>
+    </tr>`;
+  }).join('');
+  tbody.innerHTML = rowsHtml;
+}
+
+let currentView = 'map';
 function switchView(view){
-  if(view === 'heat'){
-    viewBtnHeat.classList.add('active'); viewBtnMap.classList.remove('active');
-    heatmapView.classList.add('open');
+  currentView = view;
+  viewBtnMap.classList.toggle('active', view==='map');
+  viewBtnGeoHeat.classList.toggle('active', view==='geoheat');
+  viewBtnHeat.classList.toggle('active', view==='table');
+  viewBtnSpecs.classList.toggle('active', view==='specs');
+
+  heatmapView.classList.toggle('open', view==='table');
+  specsView.classList.toggle('open', view==='specs');
+  map.getContainer().classList.toggle('geoheat-mode', view==='geoheat');
+  if(geoHeatLayer._canvas) geoHeatLayer._canvas.style.display = (view==='geoheat') ? 'block' : 'none';
+
+  // Table/Specs views fully replace the map — hide it outright (this
+  // also removes the +/- zoom control from view/interaction) rather
+  // than relying on stacking order, and close any detail panel left
+  // open from Map view so it can't float over these views' content.
+  const mapHidden = (view === 'table' || view === 'specs');
+  map.getContainer().style.visibility = mapHidden ? 'hidden' : 'visible';
+  if(mapHidden){
+    document.getElementById('panel').classList.remove('open');
+    openIdx = null;
+  }
+
+  if(view === 'table'){
     renderHeatmap();
+  } else if(view === 'specs'){
+    renderSpecsTable();
   } else {
-    viewBtnMap.classList.add('active'); viewBtnHeat.classList.remove('active');
-    heatmapView.classList.remove('open');
+    if(view === 'geoheat') updateGeoHeatLayer();
     setTimeout(() => map.invalidateSize(), 50);
   }
 }
 viewBtnMap.addEventListener('click', () => switchView('map'));
-viewBtnHeat.addEventListener('click', () => switchView('heat'));
+viewBtnGeoHeat.addEventListener('click', () => switchView('geoheat'));
+viewBtnHeat.addEventListener('click', () => switchView('table'));
+viewBtnSpecs.addEventListener('click', () => switchView('specs'));
 [heatFrom, heatTo, heatAggBy, heatMetric, heatSort].forEach(el =>
   el.addEventListener('change', renderHeatmap)
 );
@@ -1078,7 +1335,14 @@ function renderHeatmap(){
   const data = buildHeatMatrix();
   const svg = document.getElementById('heatSvg');
   const insightEl = document.getElementById('heatInsight');
+  const scrollWrap = document.getElementById('heatScrollWrap');
   if(!data){ svg.innerHTML=''; insightEl.innerHTML=''; return; }
+
+  // Give the grid a hard, explicit height bound so overflow-y:auto is
+  // guaranteed to engage regardless of how tall the SVG ends up being.
+  const controlsH = document.getElementById('heatControls').offsetHeight;
+  const insightH = insightEl.offsetHeight || 90;
+  scrollWrap.style.maxHeight = `calc(100vh - var(--topbar-h) - ${controlsH + insightH}px - 90px)`;
 
   let rows = data.rows.slice();
   if(heatSort.value === 'worst'){
@@ -1169,14 +1433,30 @@ function renderHeatmap(){
   window._lastHeatRows = rows;
 }
 
-function triggerDownload(href, filename){
+function triggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = href;
+  a.href = url;
   a.download = filename;
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  // Revoke slightly later, not synchronously — some browsers need the
+  // click's download to actually start before the object URL disappears.
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  return url;
+}
+
+function showFallbackLink(url, filename, statusEl){
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'Open in new tab instead';
+  link.style.marginLeft = '8px';
+  link.style.color = '#fff';
+  link.style.textDecoration = 'underline';
+  statusEl.appendChild(link);
 }
 
 document.getElementById('heatDownloadPng').addEventListener('click', () => {
@@ -1185,13 +1465,14 @@ document.getElementById('heatDownloadPng').addEventListener('click', () => {
   try{
     const svg = document.getElementById('heatSvg');
     if(!svg || !svg.getAttribute('width')){
-      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet';
+      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet — switch to Table view first.';
       return;
     }
     const w = parseInt(svg.getAttribute('width'),10), h = parseInt(svg.getAttribute('height'),10);
     const scale = 2;
     const svgData = new XMLSerializer().serializeToString(svg);
-    const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+    const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
+    const svgUrl = URL.createObjectURL(svgBlob);
     const img = new Image();
     img.onload = () => {
       try{
@@ -1201,16 +1482,22 @@ document.getElementById('heatDownloadPng').addEventListener('click', () => {
         ctx.fillStyle = '#0E1B2A'; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0, w, h);
-        const pngUrl = canvas.toDataURL('image/png');
-        triggerDownload(pngUrl, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.png`);
-        statusEl.className = 'ok'; statusEl.textContent = 'Downloaded';
-        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        URL.revokeObjectURL(svgUrl);
+        canvas.toBlob(pngBlob => {
+          if(!pngBlob){
+            statusEl.className = 'err'; statusEl.textContent = 'Browser could not generate the PNG.';
+            return;
+          }
+          const url = triggerDownload(pngBlob, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.png`);
+          statusEl.className = 'ok'; statusEl.textContent = 'Download started —';
+          showFallbackLink(url, 'heatmap.png', statusEl);
+        }, 'image/png');
       }catch(err){
         statusEl.className = 'err'; statusEl.textContent = 'Export failed: ' + err.message;
       }
     };
     img.onerror = () => {
-      statusEl.className = 'err'; statusEl.textContent = 'Could not render image';
+      statusEl.className = 'err'; statusEl.textContent = 'Could not render image (try Chrome/Firefox if you\u2019re on an older browser).';
     };
     img.src = svgUrl;
   }catch(err){
@@ -1220,25 +1507,27 @@ document.getElementById('heatDownloadPng').addEventListener('click', () => {
 
 document.getElementById('heatDownloadCsv').addEventListener('click', () => {
   const statusEl = document.getElementById('heatDlStatus');
+  statusEl.className = ''; statusEl.textContent = '';
   try{
     const data = window._lastHeatData, rows = window._lastHeatRows;
     if(!data || !rows){
-      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet';
+      statusEl.className = 'err'; statusEl.textContent = 'Nothing to export yet — switch to Table view first.';
       return;
     }
     const lines = ['link,' + data.cols.join(',')];
     rows.forEach(r => {
       lines.push(r.linkId + ',' + r.values.map(v => v===null?'':v.toFixed(2)).join(','));
     });
-    const csvUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-    triggerDownload(csvUrl, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.csv`);
-    statusEl.className = 'ok'; statusEl.textContent = 'Downloaded';
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    const csvBlob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8'});
+    const url = triggerDownload(csvBlob, `interconnector-heatmap_${heatFrom.value}_${heatTo.value}.csv`);
+    statusEl.className = 'ok'; statusEl.textContent = 'Download started —';
+    showFallbackLink(url, 'heatmap.csv', statusEl);
   }catch(err){
     statusEl.className = 'err'; statusEl.textContent = 'Error: ' + err.message;
   }
 });
 
+render();
 </script>
 </body>
 </html>
