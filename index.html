@@ -6,7 +6,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -215,6 +214,10 @@
     flex:1; min-width:120px; accent-color:var(--mod);
     height:4px;
   }
+  .disabledCtl{
+    opacity:0.35 !important; pointer-events:none !important; cursor:not-allowed !important;
+  }
+  #dateInput:disabled, input[type=range]:disabled{ opacity:0.35; cursor:not-allowed; }
   #clockReadout{
     font-family:'IBM Plex Mono', monospace;
     font-size:20px; font-weight:600; letter-spacing:0.5px;
@@ -234,6 +237,7 @@
   .agg .v.good{ color:var(--good); }
   .agg .v.mod{ color:var(--mod); }
   .agg .v.crit{ color:var(--crit); }
+  .agg .v.nodata{ color:var(--text-faint); }
 
   /* ---- Legend ---- */
   #legend{
@@ -253,6 +257,7 @@
   .dot.good{ background:var(--good); }
   .dot.mod{ background:var(--mod); }
   .dot.crit{ background:var(--crit); box-shadow:0 0 0 rgba(231,90,76,0.6);}
+  .dot.nodata{ background:var(--nodata, #3A4E60); }
   .lg-txt{ color:var(--text-dim); }
   .lg-txt b{ color:var(--text); font-weight:500; }
 
@@ -314,6 +319,7 @@
   .statusPill.good{ background:rgba(51,193,123,0.15); color:var(--good); }
   .statusPill.mod{ background:rgba(240,167,60,0.15); color:var(--mod); }
   .statusPill.crit{ background:rgba(231,90,76,0.15); color:var(--crit); }
+  .statusPill.nodata{ background:rgba(255,255,255,0.06); color:var(--text-faint); }
   .statusPill .pdot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
   .srcPill{
     display:inline-block; margin-left:6px; padding:4px 10px; border-radius:20px;
@@ -332,8 +338,8 @@
 
   .sparkWrap{ margin-top:16px; }
   .sparkWrap .lbl{ font-size:11px; color:var(--text-dim); margin-bottom:8px; }
-  #spark{ display:flex; align-items:flex-end; gap:1px; height:64px; }
-  .sbar{ flex:1; background:var(--steel); border-radius:1px 1px 0 0; min-height:2px; position:relative; }
+  #spark{ display:flex; align-items:flex-end; gap:3px; height:64px; }
+  .sbar{ flex:1; background:var(--steel); border-radius:2px 2px 0 0; min-height:2px; position:relative; }
   .sbar.now{ outline:1px solid #fff; outline-offset:0; }
 
   .panelNote{
@@ -349,6 +355,7 @@
     box-shadow:0 1px 4px rgba(0,0,0,0.5);
   }
   .ic-marker.crit .ic-dot{ animation: pulseDot 1.6s ease-out infinite; }
+  .ic-marker.nodata .ic-dot{ opacity:0.45; }
   .ic-marker .ring{
     position:absolute; top:50%; left:50%; width:14px; height:14px;
     border-radius:50%; transform:translate(-50%,-50%);
@@ -360,12 +367,6 @@
     width:6px; height:6px; border-radius:50%;
     background:#fff; border:1px solid rgba(0,0,0,0.4); z-index:2;
   }
-  /* Geo Heatmap mode: hide the discrete circles/tooltips entirely so
-     only the smooth intensity blobs show — this is the whole point of
-     that view (no circles, no numbers to parse). */
-  #map.geoheat-mode .ic-marker{ opacity:0; }
-  #map.geoheat-mode .leaflet-marker-icon{ pointer-events:none; }
-  #map.geoheat-mode .leaflet-tooltip{ display:none; }
 
   @keyframes pulseRing{
     0%{ transform:translate(-50%,-50%) scale(1); opacity:0.55; }
@@ -449,12 +450,11 @@
   <div id="topbarRow1">
     <div class="brand">
       <div class="t1">Interconnector Load Monitor</div>
-      <div class="t2">Cross-border transmission &middot; 15-min resolution <b>(approximate / simulated data)</b></div>
+      <div class="t2">Cross-border transmission &middot; hourly resolution <b>(approximate / simulated data)</b></div>
     </div>
     <div class="divider"></div>
     <div id="viewToggle">
       <button class="viewBtn active" id="viewBtnMap">Map</button>
-      <button class="viewBtn" id="viewBtnGeoHeat">Geo Heatmap</button>
       <button class="viewBtn" id="viewBtnHeat">Table</button>
       <button class="viewBtn" id="viewBtnSpecs">Specs</button>
     </div>
@@ -463,6 +463,7 @@
       <div class="cell"><div class="v good num" id="aggGood">–</div><div class="l">normal</div></div>
       <div class="cell"><div class="v mod num" id="aggMod">–</div><div class="l">moderate</div></div>
       <div class="cell"><div class="v crit num" id="aggCrit">–</div><div class="l">critical</div></div>
+      <div class="cell"><div class="v nodata num" id="aggNoData">–</div><div class="l">no data</div></div>
     </div>
     <div class="divider"></div>
     <div id="dataLoadWrap">
@@ -476,7 +477,7 @@
     <div id="timectl">
       <input type="date" id="dateInput" class="num">
       <div id="playBtn">&#9654;</div>
-      <input type="range" id="hourSlider" min="0" max="95" step="1" value="32">
+      <input type="range" id="hourSlider" min="0" max="23" step="1" value="8">
       <div id="clockReadout" class="num">08:00</div>
     </div>
     <div id="dateReadout">—</div>
@@ -517,6 +518,10 @@
         <option value="alpha">Alphabetical</option>
       </select>
     </div>
+    <div class="hc-group">
+      <label>&nbsp;</label>
+      <button id="heatAllTime" class="hcBtn">See all available data</button>
+    </div>
     <div class="hc-spacer"></div>
     <button id="heatDownloadPng" class="hcBtn">Download PNG</button>
     <button id="heatDownloadCsv" class="hcBtn">Download CSV</button>
@@ -546,7 +551,7 @@
 </div>
 
 <div id="banner">
-  <span>Topology &amp; capacities reflect real interconnectors (approximated where exact ENTSO&#8209;E figures weren't available). Hourly loading is simulated for demonstration — not live telemetry.</span>
+  <span>Topology &amp; capacities reflect real interconnectors (approximated where exact ENTSO&#8209;E figures weren't available). Loading/flow shows <b>only real ENTSO-E data</b> — links or hours without a fetched reading show as "no data" (gray), nothing is fabricated.</span>
   <span class="x" onclick="document.getElementById('banner').style.display='none'">&#10005;</span>
 </div>
 
@@ -555,6 +560,7 @@
   <div class="lg-row"><span class="dot good"></span><span class="lg-txt">Normal — <b>&lt; 60%</b></span></div>
   <div class="lg-row"><span class="dot mod"></span><span class="lg-txt">Moderate — <b>60–85%</b></span></div>
   <div class="lg-row"><span class="dot crit"></span><span class="lg-txt">Critical — <b>&gt; 85%</b> (pulsing)</span></div>
+  <div class="lg-row"><span class="dot nodata"></span><span class="lg-txt">No live data for this hour</span></div>
   <div id="srcToggle" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--line); font-size:11px; color:var(--text-dim); cursor:pointer; text-decoration:underline; text-decoration-color:var(--line);">Data &amp; sources</div>
 </div>
 
@@ -570,7 +576,7 @@
   </div>
   <div class="src-block">
     <div class="src-t">Hourly &amp; date-based loading</div>
-    <div class="src-d"><b>Simulated</b>, not live telemetry — a seeded model with diurnal shape, weekday/weekend effect and seasonal baseline, for demonstration only. Swap in real ENTSO-E Physical Flow data via an API token to replace this.</div>
+    <div class="src-d"><b>Live ENTSO-E data only.</b> Load a JSON file (via "Load file instead") produced by fetch_entsoe_data.py, or deploy the app so it auto-loads that file itself. Any link or hour without a real fetched reading shows as gray "no data" rather than a fabricated value.</div>
   </div>
   <div class="src-close" id="srcClose">Close</div>
 </div>
@@ -735,85 +741,14 @@ function specFor(link){
   };
 }
 
-/* ============================================================
-   Simulated hourly loading generator — deterministic per link
-   ============================================================ */
-function seedFromString(s){
-  let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) >>> 0; }
-  return h;
-}
-function mulberry32(a){
-  return function(){
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  }
-}
-
-// Loading profile is a deterministic function of (link, date) so the same
-// date always reproduces the same simulated pattern, but different dates
-// differ: weekends run lower, winter months run higher with sharper peaks.
-function seasonalFactor(month){ // month: 0-11
-  // higher demand/loading Nov-Feb, lower Jun-Aug
-  const table = [1.15,1.12,1.02,0.95,0.90,0.85,0.82,0.85,0.92,1.0,1.08,1.15];
-  return table[month];
-}
-function buildProfiles(dateStr){
-  const d = new Date(dateStr + 'T00:00:00');
-  const dow = d.getDay(); // 0 Sun .. 6 Sat
-  const month = d.getMonth();
-  const isWeekend = (dow===0 || dow===6);
-  const seasonal = seasonalFactor(month);
-  const weekendFactor = isWeekend ? 0.82 : 1.0;
-
-  return LINKS.map((l, idx) => {
-    const rnd = mulberry32(seedFromString(l[0]) ^ idx * 7919);
-    let base = (28 + rnd()*32) * seasonal * weekendFactor;
-    let amp  = (14 + rnd()*30) * (isWeekend ? 0.8 : 1.0);
-    const phase = rnd()*Math.PI*2;
-    const noiseAmp = 3 + rnd()*4; // smaller per-quarter noise; real 15-min data is locally smooth
-    const daySeed = seedFromString(l[0] + '_' + dateStr);
-    const dayRnd = mulberry32(daySeed);
-    const spikeChance = dayRnd();
-    const spikeQ = Math.floor(dayRnd()*96);
-    const spikeSize = (22 + dayRnd()*30) * seasonal;
-    const quarters = [];
-    let noiseCarry = 0;
-    for(let q=0; q<96; q++){
-      const h = q/4; // fractional hour
-      let v = base + amp*Math.sin((h/24)*Math.PI*2 - Math.PI/2 + phase*0.3);
-      const peakScale = isWeekend ? 0.6 : 1.0;
-      v += peakScale*(10*Math.exp(-Math.pow(h-8,2)/6) + 14*Math.exp(-Math.pow(h-19,2)/6)) * seasonal;
-      const nrnd = mulberry32(seedFromString(l[0]+"_"+dateStr+"_"+q));
-      // smooth the noise a little across neighbouring quarters (EMA) so it
-      // doesn't look like a fresh random number every 15 minutes
-      noiseCarry = noiseCarry*0.5 + ((nrnd()-0.5)*2*noiseAmp)*0.5;
-      v += noiseCarry;
-      if(spikeChance>0.55 && Math.abs(q-spikeQ)<=3){
-        v += spikeSize * (1-Math.abs(q-spikeQ)/3);
-      }
-      v = Math.max(4, Math.min(104, v));
-      quarters.push(v);
-    }
-    return quarters;
-  });
-}
-
-let profiles = null; // simulated profiles for currentDate (kept for the main view)
-const profilesCache = {}; // dateStr -> profiles, so the heatmap can pull any date in its range
-function getProfilesForDate(dateStr){
-  if(!profilesCache[dateStr]) profilesCache[dateStr] = buildProfiles(dateStr);
-  return profilesCache[dateStr];
-}
-
 function statusFor(pct){
+  if(pct === null || pct === undefined) return 'nodata';
   if(pct>85) return 'crit';
   if(pct>=60) return 'mod';
   return 'good';
 }
-const statusColor = {good:'#33C17B', mod:'#F0A73C', crit:'#E75A4C'};
-const statusLabel = {good:'Normal', mod:'Moderate', crit:'Critical'};
+const statusColor = {good:'#33C17B', mod:'#F0A73C', crit:'#E75A4C', nodata:'#3A4E60'};
+const statusLabel = {good:'Normal', mod:'Moderate', crit:'Critical', nodata:'No live data'};
 
 /* ============================================================
    Real ENTSO-E data (optional) — loaded via the "Load real data"
@@ -861,11 +796,15 @@ function indexRealData(payload){
 }
 
 // Returns {pct, flowMw, limitMw, isLive, limitIsLive} for link i at
-// (dateStr, q), where q is a quarter-hour-of-day index (0-95). Prefers
-// real ENTSO-E data for both flow and limit; if the exact quarter isn't
-// populated (e.g. an hourly-only source), falls back to the most recent
-// populated quarter that day, then to a flat real average, then finally
-// to the mockup's approximated static capacity.
+// (dateStr, q), where q is a quarter-hour-of-day index (0-95). Uses ONLY
+// real ENTSO-E data for flow/loading — if the exact quarter isn't
+// populated, falls back to the most recent populated quarter that same
+// day (handles hourly-only sources), but if there's genuinely no real
+// reading for this link on this day, returns pct:null rather than
+// inventing a number. Technical limit (NTC) still falls back to the
+// approximated static topology figure when no real NTC was fetched —
+// that's reference/nameplate data, not live telemetry, and was always
+// labeled "(approx.)" rather than presented as measured.
 function loadingInfo(i, dateStr, q){
   const l = LINKS[i];
   const linkId = l[0];
@@ -886,13 +825,11 @@ function loadingInfo(i, dateStr, q){
     while(qq >= 0 && dayData[qq] === undefined) qq--;
     if(qq >= 0){
       const flowMw = Math.abs(dayData[qq]);
-      const pct = Math.max(0, Math.min(104, (flowMw/limitMw)*100));
+      const pct = Math.max(0, Math.min(150, (flowMw/limitMw)*100));
       return {pct, flowMw: Math.round(flowMw), limitMw: Math.round(limitMw), isLive:true, limitIsLive};
     }
   }
-  const pct = getProfilesForDate(dateStr)[i][q];
-  const flowMw = Math.round(limitMw * (pct/100));
-  return {pct, flowMw, limitMw: Math.round(limitMw), isLive:false, limitIsLive};
+  return {pct: null, flowMw: null, limitMw: Math.round(limitMw), isLive:false, limitIsLive, noData:true};
 }
 
 /* ============================================================
@@ -961,13 +898,36 @@ const clockReadout = document.getElementById('clockReadout');
 const dateInput = document.getElementById('dateInput');
 const dateReadout = document.getElementById('dateReadout');
 const playBtn = document.getElementById('playBtn');
-let currentQ = 32; // quarter-hour index, 0-95 (08:00 default)
+let currentHour = 8; // hour of day, 0-23 — ENTSO-E cross-border physical flow is
+                      // most consistently published/verified at hourly resolution,
+                      // so the main view now displays hourly figures (averaged
+                      // from the underlying 15-min data where that's what's
+                      // actually available, which just reduces to the same
+                      // value when a source is natively hourly).
 let currentDate = '';
 let playing = false;
 let playTimer = null;
 let openIdx = null;
 
-function pctLabel(q){ const hh=Math.floor(q/4), mm=(q%4)*15; return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm; }
+function pctLabel(hour){ return (hour<10?'0':'')+hour+':00'; }
+
+// Averages the four underlying 15-min quarters into one hourly figure.
+// For sources that only publish hourly data anyway (most TSOs, for
+// physical flow), all four quarters already hold the same value, so this
+// is a no-op in practice for those — it only does real averaging for the
+// few borders ENTSO-E does publish at native 15-min resolution.
+function hourlyInfo(i, dateStr, hour){
+  const samples = [0,1,2,3].map(k => loadingInfo(i, dateStr, hour*4+k));
+  const withData = samples.filter(s => s.pct !== null);
+  const limitMw = Math.round(samples.reduce((a,b)=>a+b.limitMw,0)/4);
+  const limitIsLive = samples.some(s=>s.limitIsLive);
+  if(withData.length === 0){
+    return {pct: null, flowMw: null, limitMw, isLive:false, limitIsLive, noData:true};
+  }
+  const pct = withData.reduce((a,b)=>a+b.pct,0)/withData.length;
+  const flowMw = Math.round(withData.reduce((a,b)=>a+b.flowMw,0)/withData.length);
+  return {pct, flowMw, limitMw, isLive:true, limitIsLive};
+}
 function toISO(d){ return d.toISOString().slice(0,10); }
 
 (function initDate(){
@@ -977,21 +937,18 @@ function toISO(d){ return d.toISOString().slice(0,10); }
   dateInput.min = toISO(min);
   dateInput.value = toISO(today);
   currentDate = dateInput.value;
-  profiles = getProfilesForDate(currentDate);
 })();
 
 function formatDateReadout(dateStr){
   const d = new Date(dateStr+'T00:00:00');
   const wd = d.toLocaleDateString('en-GB', {weekday:'short'});
   const dm = d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
-  const tag = (d.getDay()===0||d.getDay()===6) ? 'weekend' : 'weekday';
-  return `${wd} ${dm} · simulated ${tag}`;
+  return `${wd} ${dm}`;
 }
 
 dateInput.addEventListener('change', () => {
   if(!dateInput.value) return;
   currentDate = dateInput.value;
-  profiles = getProfilesForDate(currentDate);
   dateReadout.textContent = formatDateReadout(currentDate);
   render();
 });
@@ -1006,7 +963,7 @@ function applyRealDataPayload(payload, sourceLabel){
   lastGeneratedAt = payload.generated_at ? new Date(payload.generated_at) : null;
   const n = Object.keys(realIndex).length;
   document.querySelector('.t2').innerHTML =
-    `Cross-border transmission <b>${n} link${n===1?'':'s'} live from ENTSO-E, rest simulated</b>`;
+    `Cross-border transmission &middot; hourly &middot; <b>${n} link${n===1?'':'s'} with live ENTSO-E data</b>`;
   render();
   updateFreshnessDisplay();
   return n;
@@ -1063,28 +1020,26 @@ fileInput.addEventListener('change', (e) => {
 });
 
 function render(){
-  let good=0, mod=0, crit=0, live=0;
+  let good=0, mod=0, crit=0, noData=0;
   LINKS.forEach((l, i) => {
-    const info = loadingInfo(i, currentDate, currentQ);
+    const info = hourlyInfo(i, currentDate, currentHour);
     const st = statusFor(info.pct);
-    if(st==='good') good++; else if(st==='mod') mod++; else crit++;
-    if(info.isLive) live++;
+    if(st==='good') good++; else if(st==='mod') mod++; else if(st==='crit') crit++; else noData++;
     const el = document.getElementById('mk'+i);
-    el.classList.remove('good','mod','crit','live-data');
+    el.classList.remove('good','mod','crit','nodata');
     el.classList.add(st);
-    if(info.isLive) el.classList.add('live-data');
     el.querySelector('.ic-dot').style.background = statusColor[st];
   });
   document.getElementById('aggGood').textContent = good;
   document.getElementById('aggMod').textContent = mod;
   document.getElementById('aggCrit').textContent = crit;
-  clockReadout.textContent = pctLabel(currentQ);
+  document.getElementById('aggNoData').textContent = noData;
+  clockReadout.textContent = pctLabel(currentHour);
   if(openIdx !== null) updatePanel(openIdx);
-  if(typeof currentView !== 'undefined' && currentView === 'geoheat') updateGeoHeatLayer();
 }
 
 slider.addEventListener('input', () => {
-  currentQ = parseInt(slider.value, 10);
+  currentHour = parseInt(slider.value, 10);
   render();
 });
 
@@ -1093,10 +1048,10 @@ playBtn.addEventListener('click', () => {
   playBtn.innerHTML = playing ? '&#10073;&#10073;' : '&#9654;';
   if(playing){
     playTimer = setInterval(() => {
-      currentQ = (currentQ + 1) % 96;
-      slider.value = currentQ;
+      currentHour = (currentHour + 1) % 24;
+      slider.value = currentHour;
       render();
-    }, 220);
+    }, 500);
   } else {
     clearInterval(playTimer);
   }
@@ -1114,32 +1069,40 @@ document.getElementById('panelClose').addEventListener('click', () => {
 
 function updatePanel(i){
   const l = LINKS[i];
-  const info = loadingInfo(i, currentDate, currentQ);
+  const info = hourlyInfo(i, currentDate, currentHour);
   const st = statusFor(info.pct);
   document.getElementById('pRoute').textContent = l[0];
   document.getElementById('pCountries').textContent = l[1] + ' \u2194 ' + l[2];
-  document.getElementById('pStatus').innerHTML =
-    `<span class="statusPill ${st}"><span class="pdot"></span>${statusLabel[st]} &middot; ${Math.round(info.pct)}% of limit</span>` +
-    `<span class="srcPill ${info.isLive?'live':'sim'}">${info.isLive ? 'Live ENTSO-E data' : 'Simulated'}</span>`;
-  document.getElementById('pFlow').textContent = info.flowMw.toLocaleString() + ' MW';
+
+  if(info.pct === null){
+    document.getElementById('pStatus').innerHTML =
+      `<span class="statusPill nodata"><span class="pdot"></span>No live ENTSO-E data for this hour</span>`;
+    document.getElementById('pFlow').textContent = '—';
+    document.getElementById('pPct').textContent = '—';
+    document.getElementById('pNote').textContent =
+      'ENTSO-E hasn\u2019t published a reading for this link at this date/hour \u2014 either it isn\u2019t covered by your fetch yet, or this border isn\u2019t published via their API at all.';
+  } else {
+    document.getElementById('pStatus').innerHTML =
+      `<span class="statusPill ${st}"><span class="pdot"></span>${statusLabel[st]} &middot; ${Math.round(info.pct)}% of limit</span>`;
+    document.getElementById('pFlow').textContent = info.flowMw.toLocaleString() + ' MW';
+    document.getElementById('pPct').textContent = Math.round(info.pct) + '%';
+    document.getElementById('pNote').textContent =
+      'Live ENTSO-E reading for this link, at hourly resolution.';
+  }
   document.getElementById('pLimit').textContent = info.limitMw.toLocaleString() + ' MW' + (info.limitIsLive ? '' : ' (approx.)');
-  document.getElementById('pPct').textContent = Math.round(info.pct) + '%';
   document.getElementById('pType').textContent = l[6];
-  document.getElementById('pNote').textContent = info.isLive
-    ? 'This link\u2019s values come from the ENTSO-E data you loaded, at 15-minute resolution.'
-    : 'No ENTSO-E data loaded for this link/date — showing the simulated model instead.';
 
   const spark = document.getElementById('spark');
   spark.innerHTML = '';
-  for(let q=0; q<96; q++){
-    const qInfo = loadingInfo(i, currentDate, q);
+  for(let h=0; h<24; h++){
+    const hInfo = hourlyInfo(i, currentDate, h);
     const bar = document.createElement('div');
-    const s = statusFor(qInfo.pct);
-    bar.className = 'sbar' + (q===currentQ ? ' now' : '');
-    bar.style.height = Math.max(2, qInfo.pct*0.6) + 'px';
+    const s = statusFor(hInfo.pct);
+    bar.className = 'sbar' + (h===currentHour ? ' now' : '');
+    bar.style.height = (hInfo.pct === null ? 4 : Math.max(2, hInfo.pct*0.6)) + 'px';
     bar.style.background = statusColor[s];
-    bar.style.opacity = qInfo.isLive ? '1' : '0.55';
-    bar.title = pctLabel(q) + ' — ' + Math.round(qInfo.pct) + '%' + (qInfo.isLive ? ' (live)' : ' (sim)');
+    bar.style.opacity = hInfo.pct === null ? '0.3' : '1';
+    bar.title = pctLabel(h) + ' — ' + (hInfo.pct === null ? 'no data' : Math.round(hInfo.pct) + '%');
     spark.appendChild(bar);
   }
 }
@@ -1159,7 +1122,6 @@ dateReadout.textContent = formatDateReadout(currentDate);
    PNG/CSV export.
    ============================================================ */
 const viewBtnMap = document.getElementById('viewBtnMap');
-const viewBtnGeoHeat = document.getElementById('viewBtnGeoHeat');
 const viewBtnHeat = document.getElementById('viewBtnHeat');
 const viewBtnSpecs = document.getElementById('viewBtnSpecs');
 const heatmapView = document.getElementById('heatmapView');
@@ -1169,6 +1131,7 @@ const heatTo = document.getElementById('heatTo');
 const heatAggBy = document.getElementById('heatAggBy');
 const heatMetric = document.getElementById('heatMetric');
 const heatSort = document.getElementById('heatSort');
+const heatAllTime = document.getElementById('heatAllTime');
 
 (function initHeatRange(){
   const toDate = new Date(dateInput.max + 'T00:00:00');
@@ -1178,32 +1141,6 @@ const heatSort = document.getElementById('heatSort');
   heatFrom.value = toISO(fromDate);
   heatTo.value = toISO(toDate);
 })();
-
-// ---- Geo heatmap layer: smooth intensity blobs at each interconnector's
-// location instead of discrete numbered circles, colored on the same
-// green->orange->red scale used everywhere else in the app. ----
-const geoHeatLayer = L.heatLayer([], {
-  radius: 36, blur: 8, maxZoom: 9, minOpacity: 0.4, max: 1.0,
-  // Sharp edges pinned to the app's real 60% / 85% thresholds, so a link
-  // visibly flips color the instant it crosses into moderate/critical —
-  // rather than a smooth gradient where most everyday values (30-70%)
-  // would otherwise sit in one visually-flat band.
-  gradient: {
-    0.0:'#1E6B47', 0.599:'#1E6B47',
-    0.60:'#F0A73C', 0.849:'#F0A73C',
-    0.85:'#E75A4C', 1.0:'#E75A4C'
-  }
-}).addTo(map);
-if(geoHeatLayer._canvas) geoHeatLayer._canvas.style.display = 'none';
-
-function updateGeoHeatLayer(){
-  const points = LINKS.map((l, i) => {
-    const info = loadingInfo(i, currentDate, currentQ);
-    return [l[3], l[4], Math.max(0.06, info.pct/100)];
-  });
-  geoHeatLayer.setLatLngs(points);
-  geoHeatLayer.redraw();
-}
 
 function renderSpecsTable(){
   const tbody = document.getElementById('specsTbody');
@@ -1230,14 +1167,11 @@ let currentView = 'map';
 function switchView(view){
   currentView = view;
   viewBtnMap.classList.toggle('active', view==='map');
-  viewBtnGeoHeat.classList.toggle('active', view==='geoheat');
   viewBtnHeat.classList.toggle('active', view==='table');
   viewBtnSpecs.classList.toggle('active', view==='specs');
 
   heatmapView.classList.toggle('open', view==='table');
   specsView.classList.toggle('open', view==='specs');
-  map.getContainer().classList.toggle('geoheat-mode', view==='geoheat');
-  if(geoHeatLayer._canvas) geoHeatLayer._canvas.style.display = (view==='geoheat') ? 'block' : 'none';
 
   // Table/Specs views fully replace the map — hide it outright (this
   // also removes the +/- zoom control from view/interaction) rather
@@ -1250,22 +1184,39 @@ function switchView(view){
     openIdx = null;
   }
 
+  // Keep the "Loading vs. technical limit" legend on the Map screen only.
+  document.getElementById('legend').style.display = (view === 'map') ? 'block' : 'none';
+
+  // The top-bar date/hour slider has no effect on the Table view (it uses
+  // its own independent From/To range instead), so disable it there
+  // rather than leave a control that looks interactive but silently does
+  // nothing — that was confusing.
+  const timeControlsDisabled = (view === 'table');
+  dateInput.disabled = timeControlsDisabled;
+  slider.disabled = timeControlsDisabled;
+  playBtn.classList.toggle('disabledCtl', timeControlsDisabled);
+  [dateInput, slider].forEach(el => el.classList.toggle('disabledCtl', timeControlsDisabled));
+  if(timeControlsDisabled && playing){ playBtn.click(); } // stop playback if running
+
   if(view === 'table'){
     renderHeatmap();
   } else if(view === 'specs'){
     renderSpecsTable();
   } else {
-    if(view === 'geoheat') updateGeoHeatLayer();
     setTimeout(() => map.invalidateSize(), 50);
   }
 }
 viewBtnMap.addEventListener('click', () => switchView('map'));
-viewBtnGeoHeat.addEventListener('click', () => switchView('geoheat'));
 viewBtnHeat.addEventListener('click', () => switchView('table'));
 viewBtnSpecs.addEventListener('click', () => switchView('specs'));
 [heatFrom, heatTo, heatAggBy, heatMetric, heatSort].forEach(el =>
   el.addEventListener('change', renderHeatmap)
 );
+heatAllTime.addEventListener('click', () => {
+  heatFrom.value = heatFrom.min;
+  heatTo.value = heatTo.max;
+  renderHeatmap();
+});
 
 function dateRangeList(fromStr, toStr){
   const out = [];
@@ -1295,6 +1246,7 @@ function buildHeatMatrix(){
     days.forEach(dateStr => {
       for(let q=0; q<96; q++){
         const info = loadingInfo(i, dateStr, q);
+        if(info.pct === null) continue; // no real data for this quarter — exclude, don't fake a zero
         const colIdx = aggBy === 'hour' ? Math.floor(q/4) : days.indexOf(dateStr);
         buckets[colIdx].push(info.pct);
       }
