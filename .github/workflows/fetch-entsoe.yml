@@ -2,10 +2,8 @@ name: Fetch ENTSO-E data
 
 on:
   schedule:
-    # Every 30 minutes. GitHub's scheduler can run a few minutes late
-    # under load — that's normal and fine for this use case.
     - cron: '*/30 * * * *'
-  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -28,15 +26,19 @@ jobs:
       - name: Fetch latest ENTSO-E data
         env:
           ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
-        # A 30-day rolling window keeps each run quick. The app's date
-        # picker still allows up to 90 days back — dates outside whatever
-        # window you fetch here just show as "no data" (gray), which is
-        # expected. Raise --days if you want more history and don't mind
-        # longer run times (each extra day doesn't add API calls, just
-        # processing — but very large ranges can hit ENTSO-E's own
-        # per-request limits, so keep it well under 90).
         run: python fetch_entsoe_data.py --token "$ENTSOE_TOKEN" --days 30 --out entsoe_data.json
 
-      - name: Commit updated data
-        run: |
-          git
+      - name: Configure git user name
+        run: git config user.name "entsoe-data-bot"
+
+      - name: Configure git user email
+        run: git config user.email "actions@users.noreply.github.com"
+
+      - name: Stage data file
+        run: git add entsoe_data.json
+
+      - name: Commit if changed
+        run: git commit -m "Update ENTSO-E data" || echo "No changes to commit"
+
+      - name: Push
+        run: git push
