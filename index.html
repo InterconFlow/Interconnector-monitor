@@ -825,7 +825,13 @@ function loadingInfo(i, dateStr, q){
     while(qq >= 0 && dayData[qq] === undefined) qq--;
     if(qq >= 0){
       const flowMw = Math.abs(dayData[qq]);
-      const pct = Math.max(0, Math.min(150, (flowMw/limitMw)*100));
+      
+      // Prevent division by zero: explicitly set pct to 0 if the limit is 0 or missing
+      let pct = 0;
+      if (limitMw > 0) {
+        pct = Math.max(0, Math.min(150, (flowMw/limitMw)*100));
+      }
+      
       return {pct, flowMw: Math.round(flowMw), limitMw: Math.round(limitMw), isLive:true, limitIsLive};
     }
   }
